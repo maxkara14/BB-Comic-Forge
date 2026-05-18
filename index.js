@@ -271,6 +271,7 @@ async function runAutoComicAfterMessage(rawMessageId) {
     let root = null;
     try {
         root = ensureForgeModalForAutomation();
+        applyDefaultPageSettingsToModal(root);
         renderProgress(root.querySelector('#bbcf-progress'), [{ number: 1, title: 'Черновик' }]);
         updateProgress(root.querySelector('#bbcf-progress'), 1, 'running', 'Черновик из чата');
         await fillDraftFromAi(root, { throwErrors: true });
@@ -2654,6 +2655,18 @@ function setValue(root, selector, value) {
     if (!input) return;
     input.value = String(value ?? '');
     input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function applyDefaultPageSettingsToModal(root) {
+    const settings = getSettings();
+    setValue(root, '#bbcf-draft-mode', settings.generationMode);
+    setValue(root, '#bbcf-draft-count', settings.panelCount);
+    setValue(root, '#bbcf-draft-layout', settings.layout);
+    setValue(root, '#bbcf-draft-style', settings.stylePreset);
+    setValue(root, '#bbcf-draft-insert-mode', settings.insertMode);
+    setValue(root, '#bbcf-draft-lock', settings.characterLock);
+    setValue(root, '#bbcf-draft-custom-style', settings.customPrompt);
+    setValue(root, '#bbcf-draft-negative', settings.negativePrompt);
 }
 
 function valueOf(root, selector) {
