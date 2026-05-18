@@ -1,0 +1,1636 @@
+#bbcf-settings {
+    --bbcf-bg: #101217;
+    --bbcf-panel: #171a21;
+    --bbcf-panel-2: #20242d;
+    --bbcf-border: rgba(255, 255, 255, 0.1);
+    --bbcf-text: #eef2f7;
+    --bbcf-muted: #a7b0be;
+    --bbcf-cyan: #62d6d2;
+    --bbcf-pink: #ff7ab6;
+    --bbcf-gold: #f4c95d;
+}
+
+#bbcf-settings .bbcf-settings-body {
+    display: grid;
+    gap: 12px;
+    padding: 12px 0;
+}
+
+#bbcf-settings .menu_button,
+.bbcf-modal .menu_button,
+.bbcf-wardrobe-modal .menu_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 0;
+    max-width: 100%;
+    white-space: nowrap;
+}
+
+#bbcf-settings .menu_button i,
+.bbcf-modal .menu_button i,
+.bbcf-wardrobe-modal .menu_button i {
+    flex: 0 0 auto;
+}
+
+#bbcf-settings .text_pole,
+.bbcf-modal .text_pole {
+    width: 100%;
+    min-width: 0;
+}
+
+#bbcf-settings .bbcf-section {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--bbcf-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bbcf-panel) 82%, transparent);
+}
+
+#bbcf-settings .bbcf-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--bbcf-text);
+    font-size: 0.95rem;
+}
+
+#bbcf-settings details.bbcf-section > summary {
+    cursor: pointer;
+    list-style: none;
+}
+
+#bbcf-settings details.bbcf-section > summary::-webkit-details-marker {
+    display: none;
+}
+
+#bbcf-settings .bbcf-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+#bbcf-settings .bbcf-row label {
+    color: var(--bbcf-muted);
+    font-size: 0.86rem;
+}
+
+#bbcf-settings .bbcf-grid-2 .bbcf-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+}
+
+#bbcf-settings .bbcf-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#bbcf-settings .bbcf-quick-steps {
+    display: grid;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+#bbcf-settings .bbcf-quick-steps div {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+    color: var(--bbcf-muted);
+    font-size: 0.84rem;
+    line-height: 1.35;
+}
+
+#bbcf-settings .bbcf-quick-steps b {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: rgba(98, 214, 210, 0.16);
+    color: var(--bbcf-cyan);
+    font-size: 0.78rem;
+}
+
+#bbcf-settings .bbcf-model-picker {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-width: 0;
+}
+
+#bbcf-settings .bbcf-ref-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 8px;
+}
+
+#bbcf-settings .bbcf-wardrobe-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+#bbcf-settings .bbcf-wardrobe-panel {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--bbcf-border);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(98, 214, 210, 0.08), rgba(255, 122, 182, 0.06));
+}
+
+#bbcf-settings .bbcf-wardrobe-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+#bbcf-settings #bbcf-open-wardrobe {
+    flex: 0 0 auto;
+    min-width: 92px;
+    max-width: 100%;
+    padding: 4px 10px;
+    overflow: hidden;
+}
+
+#bbcf-settings #bbcf-open-wardrobe span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#bbcf-settings .bbcf-wardrobe-head h5 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 4px;
+    font-size: 0.92rem;
+    color: var(--bbcf-text);
+}
+
+#bbcf-settings .bbcf-wardrobe-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+#bbcf-settings .bbcf-wardrobe-owner-mini,
+#bbcf-settings .bbcf-wardrobe-empty {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+#bbcf-settings .bbcf-wardrobe-owner-mini strong {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.82rem;
+}
+
+#bbcf-settings .bbcf-wardrobe-owner-mini > div {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 30px;
+}
+
+#bbcf-settings .bbcf-wardrobe-mini-thumb {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--bbcf-muted);
+}
+
+#bbcf-settings .bbcf-wardrobe-mini-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#bbcf-settings .bbcf-wardrobe-empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--bbcf-muted);
+}
+
+#bbcf-settings .bbcf-ref-card {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+    padding: 8px;
+    border: 1px solid var(--bbcf-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+#bbcf-settings .bbcf-ref-thumb {
+    width: 64px;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: #0c0f15;
+    color: var(--bbcf-muted);
+}
+
+#bbcf-settings .bbcf-ref-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#bbcf-settings .bbcf-ref-main {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+#bbcf-settings .bbcf-ref-description {
+    min-height: 54px;
+    resize: vertical;
+}
+
+#bbcf-settings .bbcf-ref-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    gap: 6px;
+}
+
+#bbcf-settings .bbcf-ref-actions .menu_button {
+    min-height: 32px;
+    padding: 4px 8px;
+}
+
+#bbcf-settings .bbcf-ref-clear {
+    width: 34px;
+    padding: 0;
+}
+
+#bbcf-settings .bbcf-hint {
+    margin: 0;
+    color: var(--bbcf-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+#bbcf-settings .bbcf-muted {
+    color: var(--bbcf-muted);
+}
+
+.bbcf-hidden {
+    display: none !important;
+}
+
+#bbcf-open-fab {
+    position: fixed;
+    right: 12px;
+    bottom: 74px;
+    z-index: 2900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    min-height: 26px;
+    max-height: 26px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    background: rgba(30, 30, 30, 0.7);
+    color: #9ca3af;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+}
+
+#bbcf-open-fab span {
+    display: none;
+}
+
+#bbcf-open-fab:hover {
+    color: #ffffff;
+    background: rgba(50, 50, 50, 0.9);
+    border-color: rgba(212, 175, 55, 0.4);
+}
+
+#bbcf-open-fab.bbcf-ready {
+    color: #071014;
+    background: #62d6d2;
+    border-color: rgba(98, 214, 210, 0.9);
+}
+
+#bbcf-open-fab.bbcf-generating {
+    color: #d4af37;
+    border-color: rgba(212, 175, 55, 0.45);
+}
+
+#bbcf-open-fab.bbcf-chat-launcher {
+    position: static;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    flex: 0 0 auto;
+    align-self: center;
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    min-height: 26px;
+    max-height: 26px;
+    padding: 0;
+    margin: 0 2px;
+    transform: translate(-5px, -2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    vertical-align: middle;
+}
+
+#bbcf-open-fab.bbcf-chat-launcher span {
+    display: none;
+}
+
+.bbcf-wardrobe-modal-root {
+    position: fixed;
+    inset: 0;
+    z-index: 4200;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+}
+
+.bbcf-wardrobe-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 5, 9, 0.76);
+    backdrop-filter: blur(5px);
+}
+
+.bbcf-wardrobe-modal {
+    position: relative;
+    width: min(1120px, 96vw);
+    max-height: 92vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    background: #101217;
+    color: #eef2f7;
+    box-shadow: 0 26px 80px rgba(0, 0, 0, 0.64);
+}
+
+.bbcf-wardrobe-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(135deg, rgba(98, 214, 210, 0.1), rgba(255, 122, 182, 0.08));
+}
+
+.bbcf-wardrobe-modal-header h3,
+.bbcf-wardrobe-modal-header p {
+    margin: 0;
+}
+
+.bbcf-wardrobe-modal-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;
+}
+
+.bbcf-wardrobe-modal-header p {
+    margin-top: 4px;
+    color: #a7b0be;
+    font-size: 0.84rem;
+}
+
+.bbcf-wardrobe-modal-body {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    overflow: hidden;
+}
+
+.bbcf-wardrobe-closet,
+.bbcf-wardrobe-library {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+}
+
+.bbcf-wardrobe-closet {
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.bbcf-wardrobe-tabs,
+.bbcf-wardrobe-mode,
+.bbcf-wardrobe-filter,
+.bbcf-wardrobe-tag-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.bbcf-wardrobe-tabs button,
+.bbcf-wardrobe-mode button,
+.bbcf-wardrobe-filter button,
+.bbcf-wardrobe-tag-filter button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 4px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #d8dee8;
+    cursor: pointer;
+}
+
+.bbcf-wardrobe-tabs button.active,
+.bbcf-wardrobe-mode button.active,
+.bbcf-wardrobe-filter button.active,
+.bbcf-wardrobe-tag-filter button.active {
+    border-color: rgba(98, 214, 210, 0.55);
+    background: rgba(98, 214, 210, 0.18);
+    color: #ffffff;
+}
+
+.bbcf-wardrobe-tag-filter {
+    margin: 0 0 10px;
+}
+
+.bbcf-wardrobe-tag-filter button {
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 0.78rem;
+}
+
+.bbcf-wardrobe-mode {
+    margin: 12px 0;
+}
+
+.bbcf-wardrobe-mode button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.bbcf-wardrobe-slots {
+    display: grid;
+    gap: 8px;
+}
+
+.bbcf-wardrobe-slot {
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr) 30px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.bbcf-wardrobe-slot.filled {
+    border-color: rgba(255, 122, 182, 0.32);
+}
+
+.bbcf-wardrobe-slot-img {
+    width: 50px;
+    height: 50px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.22);
+    color: #a7b0be;
+}
+
+.bbcf-wardrobe-slot-img img,
+.bbcf-wardrobe-item-image img,
+.bbcf-wardrobe-editor-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.bbcf-wardrobe-slot-info {
+    min-width: 0;
+}
+
+.bbcf-wardrobe-slot-info span,
+.bbcf-wardrobe-item-body p {
+    color: #a7b0be;
+    font-size: 0.78rem;
+}
+
+.bbcf-wardrobe-slot-info strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.86rem;
+}
+
+.bbcf-wardrobe-slot button {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #d8dee8;
+}
+
+.bbcf-wardrobe-library-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.bbcf-wardrobe-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px;
+}
+
+.bbcf-wardrobe-item {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.bbcf-wardrobe-item.active {
+    border-color: rgba(98, 214, 210, 0.62);
+    box-shadow: 0 0 0 1px rgba(98, 214, 210, 0.18) inset;
+}
+
+.bbcf-wardrobe-item-image {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #0b0d12;
+    color: #a7b0be;
+}
+
+.bbcf-wardrobe-item-image span {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.62);
+    color: #fff;
+    font-size: 0.72rem;
+}
+
+.bbcf-wardrobe-item-body {
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+}
+
+.bbcf-wardrobe-item-body strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bbcf-wardrobe-item-body p {
+    min-height: 2.4em;
+    max-height: 3.6em;
+    margin: 0;
+    overflow: hidden;
+    line-height: 1.2;
+}
+
+.bbcf-wardrobe-card-actions,
+.bbcf-wardrobe-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.bbcf-wardrobe-card-actions .bbcf-wardrobe-equip {
+    flex: 1 1 auto;
+}
+
+.bbcf-wardrobe-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.bbcf-wardrobe-card-tags span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(98, 214, 210, 0.1);
+    color: #c7f4f0;
+    font-size: 0.7rem;
+}
+
+.bbcf-icon-button {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+}
+
+.bbcf-wardrobe-editor {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid rgba(98, 214, 210, 0.22);
+    border-radius: 8px;
+    background: rgba(98, 214, 210, 0.06);
+}
+
+.bbcf-wardrobe-editor-preview {
+    display: grid;
+    grid-template-rows: minmax(130px, 1fr) auto;
+    gap: 8px;
+}
+
+.bbcf-wardrobe-editor-preview > i,
+.bbcf-wardrobe-empty-large {
+    display: grid;
+    place-items: center;
+    min-height: 130px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.22);
+    color: #a7b0be;
+}
+
+.bbcf-wardrobe-editor-preview img {
+    min-height: 130px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.bbcf-wardrobe-editor-fields {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.bbcf-wardrobe-editor textarea {
+    resize: vertical;
+}
+
+.bbcf-wardrobe-empty-large {
+    grid-column: 1 / -1;
+    gap: 8px;
+    min-height: 180px;
+}
+
+.bbcf-modal-root {
+    position: fixed;
+    inset: 0;
+    z-index: 4100;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    overflow: auto;
+}
+
+.bbcf-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 5, 9, 0.72);
+    backdrop-filter: blur(5px);
+}
+
+.bbcf-modal {
+    position: relative;
+    width: min(1180px, 96vw);
+    max-height: 92vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #0f1218;
+    color: #eef2f7;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62);
+}
+
+.bbcf-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: #151922;
+}
+
+.bbcf-modal-root.bbcf-minimized {
+    display: none;
+}
+
+.bbcf-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    font-size: 1rem;
+}
+
+.bbcf-modal-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bbcf-modal-close {
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #eef2f7;
+    cursor: pointer;
+}
+
+.bbcf-modal-body {
+    display: grid;
+    grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+    min-height: 0;
+}
+
+.bbcf-form {
+    min-height: 0;
+    overflow: auto;
+    padding: 14px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    background: #11151d;
+}
+
+.bbcf-preview {
+    min-height: 0;
+    overflow: auto;
+    padding: 14px;
+    background: #090b10;
+}
+
+.bbcf-preview-actions {
+    z-index: 6;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: -14px -14px 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(9, 11, 16, 0.96);
+    backdrop-filter: blur(4px);
+}
+
+.bbcf-preview-actions .menu_button {
+    min-width: 0;
+}
+
+.bbcf-history {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.bbcf-history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.bbcf-history-header b {
+    color: #eef2f7;
+    font-size: 0.9rem;
+}
+
+.bbcf-history-card {
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.bbcf-history-thumb {
+    width: 74px;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 6px;
+    background: #11151d;
+    color: #9eabbc;
+}
+
+.bbcf-history-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.bbcf-history-main {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.bbcf-history-main b {
+    color: #eef2f7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bbcf-history-main span {
+    color: #a7b0be;
+    font-size: 0.78rem;
+}
+
+.bbcf-history-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.bbcf-field {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.bbcf-field label {
+    color: #b7c0cf;
+    font-size: 0.83rem;
+}
+
+.bbcf-field textarea {
+    min-height: 82px;
+    resize: vertical;
+}
+
+.bbcf-advanced {
+    margin: 0 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.bbcf-advanced summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    color: #dce6f3;
+    cursor: pointer;
+    font-weight: 700;
+    list-style: none;
+}
+
+.bbcf-advanced summary::-webkit-details-marker {
+    display: none;
+}
+
+.bbcf-advanced-body {
+    padding: 0 12px 12px;
+}
+
+.bbcf-inline-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.bbcf-preset-help {
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.bbcf-preset-help summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #dce6f3;
+    cursor: pointer;
+    font-weight: 700;
+    list-style: none;
+}
+
+.bbcf-preset-help summary::-webkit-details-marker {
+    display: none;
+}
+
+.bbcf-preset-examples {
+    display: grid;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.bbcf-preset-example-group {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.bbcf-preset-example-group > strong {
+    font-size: 0.86rem;
+    color: #eef2f7;
+}
+
+.bbcf-preset-example,
+.bbcf-layout-example {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.bbcf-preset-example span,
+.bbcf-layout-example span {
+    color: #dce7f4;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.bbcf-preset-example p,
+.bbcf-layout-example p {
+    margin: 0;
+    color: #aab4c2;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.bbcf-layout-example div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.bbcf-layout-example b {
+    padding: 2px 6px;
+    border: 1px solid rgba(98, 214, 210, 0.26);
+    border-radius: 5px;
+    color: #9ee7e1;
+    background: rgba(98, 214, 210, 0.08);
+    font-size: 0.72rem;
+}
+
+.bbcf-preset-save-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.bbcf-preset-save-card {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(98, 214, 210, 0.18);
+    border-radius: 8px;
+    background: rgba(98, 214, 210, 0.055);
+}
+
+.bbcf-preset-save-card b {
+    color: #eef2f7;
+    font-size: 0.86rem;
+}
+
+.bbcf-preset-save-card .bbcf-inline-actions {
+    grid-template-columns: 1fr;
+}
+
+.bbcf-preset-save-card .menu_button {
+    width: 100%;
+    justify-content: center;
+}
+
+.bbcf-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.bbcf-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 12px;
+    background: #11151d;
+}
+
+.bbcf-primary {
+    background: linear-gradient(135deg, #62d6d2, #ff7ab6) !important;
+    color: #071014 !important;
+    border: 0 !important;
+    font-weight: 700;
+}
+
+.bbcf-progress {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.bbcf-progress-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #dbe5f2;
+    font-size: 0.82rem;
+}
+
+.bbcf-progress-bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.bbcf-progress-bar span {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, #62d6d2, #f4c95d, #ff7ab6);
+    transition: width 0.25s ease;
+}
+
+.bbcf-progress-row[data-state="done"] .bbcf-progress-bar span {
+    width: 100%;
+}
+
+.bbcf-progress-row[data-state="running"] .bbcf-progress-bar span {
+    width: 62%;
+    animation: bbcf-progress-pulse 1.2s ease-in-out infinite;
+}
+
+.bbcf-progress-row[data-state="waiting"] .bbcf-progress-bar span {
+    width: 34%;
+    background: linear-gradient(90deg, #f4c95d, #ffcf7a);
+}
+
+.bbcf-progress-row[data-state="error"] {
+    border-color: rgba(255, 104, 104, 0.45);
+}
+
+.bbcf-progress-row[data-state="error"] .bbcf-progress-bar span {
+    width: 100%;
+    background: #ff6868;
+}
+
+@keyframes bbcf-progress-pulse {
+    0%, 100% {
+        opacity: 0.72;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.bbcf-comics-artifact .bbcf-comic-page,
+.bbcf-comic-page {
+    --bbcf-page-bg: #08090d;
+    --bbcf-frame: #f7f4eb;
+    --bbcf-ink: #111318;
+    max-width: 760px;
+    margin: 28px auto;
+    padding: clamp(10px, 2.4vw, 18px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: var(--bbcf-page-bg);
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.68);
+}
+
+comics {
+    display: block;
+}
+
+.bbcf-comic-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0 0 12px;
+    color: #f7f4eb;
+    font-size: clamp(0.9rem, 2.1vw, 1.12rem);
+    letter-spacing: 0;
+}
+
+.bbcf-comic-title span {
+    color: rgba(247, 244, 235, 0.58);
+    font-size: 0.78em;
+    white-space: nowrap;
+}
+
+.bbcf-page-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.bbcf-layout-webtoon .bbcf-page-grid {
+    grid-template-columns: 1fr;
+}
+
+.bbcf-layout-single .bbcf-page-grid {
+    grid-template-columns: 1fr;
+}
+
+.bbcf-layout-grid .bbcf-page-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bbcf-layout-cinematic .bbcf-page-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.bbcf-layout-cinematic .bbcf-panel {
+    grid-column: span 3;
+}
+
+.bbcf-layout-cinematic .bbcf-panel:nth-child(1),
+.bbcf-layout-cinematic .bbcf-panel:nth-child(4) {
+    grid-column: 1 / -1;
+}
+
+.bbcf-layout-manga .bbcf-page-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.bbcf-layout-manga .bbcf-panel {
+    grid-column: span 2;
+}
+
+.bbcf-layout-manga .bbcf-panel:nth-child(1) {
+    grid-column: span 3;
+    grid-row: span 2;
+}
+
+.bbcf-layout-manga .bbcf-panel:nth-child(4) {
+    grid-column: 1 / -1;
+}
+
+.bbcf-layout-dramatic .bbcf-page-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.bbcf-layout-dramatic .bbcf-panel {
+    grid-column: span 6;
+}
+
+.bbcf-layout-dramatic .bbcf-panel:nth-child(1) {
+    grid-column: 1 / -1;
+    transform: rotate(-0.35deg);
+}
+
+.bbcf-layout-dramatic .bbcf-panel:nth-child(2) {
+    transform: rotate(0.35deg);
+}
+
+.bbcf-layout-dramatic .bbcf-panel:nth-child(3) {
+    transform: rotate(-0.25deg);
+}
+
+.bbcf-panel {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 3px solid var(--bbcf-frame);
+    border-radius: 4px;
+    background: #111318;
+    isolation: isolate;
+}
+
+.bbcf-panel img {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    object-fit: contain;
+}
+
+.bbcf-panel-error {
+    min-height: 180px;
+    display: grid;
+    place-items: center;
+    border-style: dashed;
+    background: repeating-linear-gradient(135deg, #141821, #141821 12px, #1b202b 12px, #1b202b 24px);
+}
+
+.bbcf-panel-error-body {
+    display: grid;
+    gap: 10px;
+    justify-items: center;
+    max-width: 92%;
+    padding: 16px;
+    color: #f4d6d6;
+    text-align: center;
+}
+
+.bbcf-panel-error-body span {
+    color: #f0a8a8;
+    font-size: 0.84rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.bbcf-panel-action {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 5;
+    width: 34px;
+    height: 34px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.32);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.58);
+    color: #fff;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.bbcf-panel:hover .bbcf-panel-action,
+.bbcf-panel:focus-within .bbcf-panel-action,
+.bbcf-panel-action.is-busy {
+    opacity: 1;
+}
+
+.bbcf-panel-action:hover {
+    transform: scale(1.06);
+}
+
+.bbcf-bubble {
+    position: absolute;
+    z-index: 3;
+    max-width: min(76%, 310px);
+    padding: 8px 11px;
+    border: 2px solid #0b0d12;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #111318;
+    box-shadow: 0 5px 0 rgba(0, 0, 0, 0.18);
+    font: 700 clamp(0.78rem, 2.8vw, 0.96rem)/1.18 system-ui, sans-serif;
+    letter-spacing: 0;
+}
+
+.bbcf-bubble::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: inherit;
+    border-right: 2px solid #0b0d12;
+    border-bottom: 2px solid #0b0d12;
+    transform: rotate(45deg);
+    bottom: -8px;
+    left: 28px;
+}
+
+.bbcf-bubble.thought {
+    border-radius: 34px;
+    border-style: dashed;
+}
+
+.bbcf-bubble.shout {
+    border-radius: 8px 20px 8px 20px;
+    background: #fff5b8;
+    transform: rotate(-1deg);
+}
+
+.bbcf-bubble.whisper {
+    background: rgba(235, 246, 255, 0.9);
+    color: #243140;
+    font-weight: 600;
+}
+
+.bbcf-bubble[data-pos="top-left"] {
+    top: 8%;
+    left: 5%;
+}
+
+.bbcf-bubble[data-pos="top-right"] {
+    top: 8%;
+    right: 5%;
+}
+
+.bbcf-bubble[data-pos="bottom-left"] {
+    bottom: 9%;
+    left: 5%;
+}
+
+.bbcf-bubble[data-pos="bottom-right"] {
+    right: 5%;
+    bottom: 9%;
+}
+
+.bbcf-sfx {
+    position: absolute;
+    z-index: 2;
+    right: 7%;
+    bottom: 8%;
+    color: #fff;
+    text-shadow: 3px 3px 0 #0b0d12, -2px 2px 0 #ff4f8c;
+    transform: rotate(-8deg);
+    font: 900 clamp(1.3rem, 6vw, 3rem)/1 system-ui, sans-serif;
+    letter-spacing: 0;
+}
+
+.bbcf-regen-status {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    padding: 12px;
+    background: rgba(4, 6, 10, 0.68);
+    color: #fff;
+    font-weight: 700;
+    text-align: center;
+}
+
+@media (max-width: 860px) {
+    .bbcf-modal-root {
+        padding: 8px;
+        place-items: start center;
+        align-items: stretch;
+    }
+
+    .bbcf-modal {
+        width: 100%;
+        max-height: calc(100dvh - 16px);
+    }
+
+    .bbcf-modal-body {
+        overflow: auto;
+    }
+
+    .bbcf-modal-body {
+        grid-template-columns: 1fr;
+    }
+
+    .bbcf-form {
+        border-right: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        max-height: none;
+    }
+
+    .bbcf-preview {
+        min-height: 42vh;
+        overflow: visible;
+    }
+
+    .bbcf-preview-actions {
+        margin: -14px -14px 12px;
+    }
+
+    .bbcf-grid-2,
+    .bbcf-inline-actions,
+    .bbcf-preset-save-grid,
+    #bbcf-settings .bbcf-row,
+    #bbcf-settings .bbcf-ref-grid,
+    #bbcf-settings .bbcf-model-picker {
+        grid-template-columns: 1fr;
+    }
+
+    #bbcf-settings .bbcf-ref-card {
+        grid-template-columns: 58px minmax(0, 1fr);
+    }
+
+    #bbcf-settings .bbcf-ref-thumb {
+        width: 58px;
+    }
+
+    .bbcf-toolbar .menu_button {
+        flex: 1 1 180px;
+    }
+
+    .bbcf-preview-actions .menu_button {
+        flex: 1 1 140px;
+    }
+
+    .bbcf-history-card {
+        grid-template-columns: 58px minmax(0, 1fr);
+    }
+
+    .bbcf-history-thumb {
+        width: 58px;
+    }
+
+    .bbcf-progress-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .bbcf-layout-grid .bbcf-page-grid,
+    .bbcf-layout-cinematic .bbcf-page-grid,
+    .bbcf-layout-manga .bbcf-page-grid,
+    .bbcf-layout-dramatic .bbcf-page-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .bbcf-layout-cinematic .bbcf-panel,
+    .bbcf-layout-manga .bbcf-panel,
+    .bbcf-layout-dramatic .bbcf-panel {
+        grid-column: auto;
+        grid-row: auto;
+        transform: none;
+    }
+
+    #bbcf-open-fab {
+        right: 12px;
+        bottom: 72px;
+    }
+
+    .bbcf-wardrobe-modal-root {
+        padding: 8px;
+    }
+
+    .bbcf-wardrobe-modal {
+        width: 100%;
+        max-height: 96vh;
+    }
+
+    .bbcf-wardrobe-modal-body,
+    .bbcf-wardrobe-editor {
+        grid-template-columns: 1fr;
+    }
+
+    .bbcf-wardrobe-closet {
+        border-right: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .bbcf-wardrobe-library-top,
+    #bbcf-settings .bbcf-wardrobe-head {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .bbcf-wardrobe-items {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    }
+
+    .bbcf-wardrobe-tabs,
+    .bbcf-wardrobe-mode,
+    .bbcf-wardrobe-filter,
+    .bbcf-wardrobe-tag-filter {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 2px;
+    }
+
+    .bbcf-wardrobe-tabs button,
+    .bbcf-wardrobe-mode button,
+    .bbcf-wardrobe-filter button,
+    .bbcf-wardrobe-tag-filter button {
+        flex: 0 0 auto;
+    }
+
+    .bbcf-wardrobe-card-actions .menu_button,
+    .bbcf-wardrobe-editor-actions .menu_button {
+        min-height: 34px;
+    }
+}
+
+@media (max-width: 420px) {
+    .bbcf-modal-root {
+        padding: 4px;
+    }
+
+    .bbcf-modal {
+        max-height: calc(100dvh - 8px);
+    }
+
+    .bbcf-modal-header {
+        padding: 10px;
+    }
+
+    .bbcf-modal-title {
+        font-size: 0.9rem;
+    }
+
+    .bbcf-modal-title .bbcf-muted {
+        display: none;
+    }
+
+    .bbcf-form,
+    .bbcf-preview {
+        padding: 10px;
+    }
+
+    .bbcf-preview-actions {
+        margin: -10px -10px 10px;
+        padding: 10px;
+    }
+
+    .bbcf-comic-page {
+        margin: 12px auto;
+        padding: 7px;
+    }
+
+    .bbcf-wardrobe-modal-root {
+        padding: 4px;
+    }
+
+    .bbcf-wardrobe-modal-header {
+        padding: 10px;
+    }
+
+    .bbcf-wardrobe-modal-header p {
+        display: none;
+    }
+
+    .bbcf-wardrobe-closet,
+    .bbcf-wardrobe-library {
+        padding: 8px;
+    }
+
+    .bbcf-wardrobe-slot {
+        grid-template-columns: 42px minmax(0, 1fr) 28px;
+        gap: 6px;
+        padding: 6px;
+    }
+
+    .bbcf-wardrobe-slot-img {
+        width: 42px;
+        height: 42px;
+    }
+
+    .bbcf-wardrobe-items {
+        grid-template-columns: 1fr;
+    }
+
+    .bbcf-wardrobe-editor-preview {
+        grid-template-rows: 150px auto;
+    }
+
+    .bbcf-wardrobe-editor-actions .menu_button {
+        flex: 1 1 100%;
+    }
+}
