@@ -373,10 +373,15 @@
 .bbcf-wardrobe-modal-root {
     position: fixed;
     inset: 0;
-    z-index: 4200;
+    z-index: 10060;
     display: grid;
     place-items: center;
     padding: 16px;
+    width: 100vw;
+    height: 100dvh;
+    box-sizing: border-box;
+    overflow: hidden;
+    overscroll-behavior: contain;
 }
 
 .bbcf-wardrobe-backdrop {
@@ -388,8 +393,9 @@
 
 .bbcf-wardrobe-modal {
     position: relative;
-    width: min(1120px, 96vw);
-    max-height: 92vh;
+    width: min(1120px, calc(100vw - 32px));
+    max-width: 100%;
+    max-height: calc(100dvh - 32px);
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
@@ -724,11 +730,15 @@
 .bbcf-modal-root {
     position: fixed;
     inset: 0;
-    z-index: 4100;
+    z-index: 10050;
     display: grid;
     place-items: center;
     padding: 18px;
-    overflow: auto;
+    width: 100vw;
+    height: 100dvh;
+    box-sizing: border-box;
+    overflow: hidden;
+    overscroll-behavior: contain;
 }
 
 .bbcf-modal-backdrop {
@@ -740,8 +750,9 @@
 
 .bbcf-modal {
     position: relative;
-    width: min(1180px, 96vw);
-    max-height: 92vh;
+    width: min(1180px, calc(100vw - 36px));
+    max-width: 100%;
+    max-height: calc(100dvh - 36px);
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     border: 1px solid rgba(255, 255, 255, 0.14);
@@ -795,6 +806,7 @@
     display: grid;
     grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
     min-height: 0;
+    overflow: hidden;
 }
 
 .bbcf-form {
@@ -1152,43 +1164,59 @@
 
 .bbcf-comics-artifact .bbcf-comic-page,
 .bbcf-comic-page {
-    --bbcf-page-bg: #08090d;
-    --bbcf-frame: #f7f4eb;
-    --bbcf-ink: #111318;
+    --bbcf-page-bg: #f1eadc;
+    --bbcf-frame: #15120d;
+    --bbcf-ink: #17120c;
+    display: block;
+    width: 100% !important;
     max-width: 760px;
     margin: 28px auto;
     padding: clamp(10px, 2.4vw, 18px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(24, 18, 12, 0.22);
     border-radius: 8px;
-    background: var(--bbcf-page-bg);
-    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.68);
+    background: var(--bbcf-page-bg) !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.32);
+    box-sizing: border-box !important;
+    overflow: visible;
 }
 
 comics {
     display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .bbcf-comic-title {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center !important;
     flex-wrap: wrap;
     gap: 12px;
     margin: 0 0 12px;
-    color: #f7f4eb;
+    color: var(--bbcf-ink) !important;
     font-size: clamp(0.9rem, 2.1vw, 1.12rem);
     letter-spacing: 0;
+    text-align: center !important;
 }
 
 .bbcf-comic-title span {
-    color: rgba(247, 244, 235, 0.58);
+    color: rgba(23, 18, 12, 0.58);
     font-size: 0.78em;
     white-space: nowrap;
 }
 
 .bbcf-page-grid {
     display: grid;
-    gap: 10px;
+    gap: 8px;
+    align-items: start;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    grid-auto-rows: auto !important;
+    grid-auto-flow: row !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
 }
 
 .bbcf-layout-webtoon .bbcf-page-grid {
@@ -1226,7 +1254,6 @@ comics {
 
 .bbcf-layout-manga .bbcf-panel:nth-child(1) {
     grid-column: span 3;
-    grid-row: span 2;
 }
 
 .bbcf-layout-manga .bbcf-panel:nth-child(4) {
@@ -1256,21 +1283,39 @@ comics {
 
 .bbcf-panel {
     position: relative;
+    display: block;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
+    min-height: 0;
+    height: auto !important;
+    aspect-ratio: auto !important;
+    grid-row: auto !important;
+    align-self: start;
+    justify-self: stretch;
     margin: 0;
     overflow: hidden;
     border: 3px solid var(--bbcf-frame);
     border-radius: 4px;
-    background: #111318;
+    background: #fffaf0;
     isolation: isolate;
+    box-sizing: border-box;
+}
+
+.bbcf-panel:not(.bbcf-panel-error) {
+    border: 3px solid var(--bbcf-frame) !important;
+    background: #fffaf0 !important;
 }
 
 .bbcf-panel img {
     display: block;
-    width: 100%;
-    height: auto;
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100% !important;
     min-height: 0;
-    object-fit: contain;
+    object-fit: contain !important;
+    object-position: center !important;
+    box-sizing: border-box;
 }
 
 .bbcf-panel-error {
@@ -1418,27 +1463,27 @@ comics {
 @media (max-width: 860px) {
     .bbcf-modal-root {
         padding: 8px;
-        place-items: start center;
+        place-items: stretch;
         align-items: stretch;
     }
 
     .bbcf-modal {
         width: 100%;
+        height: calc(100dvh - 16px);
         max-height: calc(100dvh - 16px);
     }
 
     .bbcf-modal-body {
+        display: block;
         overflow: auto;
-    }
-
-    .bbcf-modal-body {
-        grid-template-columns: 1fr;
+        -webkit-overflow-scrolling: touch;
     }
 
     .bbcf-form {
         border-right: 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         max-height: none;
+        overflow: visible;
     }
 
     .bbcf-preview {
@@ -1447,7 +1492,7 @@ comics {
     }
 
     .bbcf-preview-actions {
-        margin: -14px -14px 12px;
+        margin: 0 0 12px;
     }
 
     .bbcf-grid-2,
@@ -1494,12 +1539,14 @@ comics {
         grid-template-columns: 1fr;
     }
 
+    .bbcf-layout-grid .bbcf-panel,
     .bbcf-layout-cinematic .bbcf-panel,
     .bbcf-layout-manga .bbcf-panel,
     .bbcf-layout-dramatic .bbcf-panel {
-        grid-column: auto;
-        grid-row: auto;
-        transform: none;
+        grid-column: auto !important;
+        grid-row: auto !important;
+        height: auto !important;
+        transform: none !important;
     }
 
     #bbcf-open-fab {
@@ -1509,11 +1556,13 @@ comics {
 
     .bbcf-wardrobe-modal-root {
         padding: 8px;
+        place-items: stretch;
     }
 
     .bbcf-wardrobe-modal {
         width: 100%;
-        max-height: 96vh;
+        height: calc(100dvh - 16px);
+        max-height: calc(100dvh - 16px);
     }
 
     .bbcf-wardrobe-modal-body,
@@ -1524,6 +1573,16 @@ comics {
     .bbcf-wardrobe-closet {
         border-right: 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        overflow: visible;
+    }
+
+    .bbcf-wardrobe-modal-body {
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .bbcf-wardrobe-library {
+        overflow: visible;
     }
 
     .bbcf-wardrobe-library-top,
@@ -1564,6 +1623,7 @@ comics {
     }
 
     .bbcf-modal {
+        height: calc(100dvh - 8px);
         max-height: calc(100dvh - 8px);
     }
 
@@ -1585,7 +1645,7 @@ comics {
     }
 
     .bbcf-preview-actions {
-        margin: -10px -10px 10px;
+        margin: 0 0 10px;
         padding: 10px;
     }
 

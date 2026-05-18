@@ -84,7 +84,7 @@ Existing character lock:
 </format>`;
 
 const DEFAULT_SETTINGS = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     enabled: true,
     showFab: true,
     apiType: 'onlysq-imagen',
@@ -124,6 +124,8 @@ const DEFAULT_SETTINGS = {
     wardrobe: [],
     wardrobeItems: [],
     wardrobeAssignments: {},
+    wardrobeProfiles: {},
+    activeWardrobeProfileKey: '',
     savedDraft: null,
     comicHistory: [],
 };
@@ -201,10 +203,16 @@ function initialize() {
     getSettings();
     const context = SillyTavern.getContext();
     const readyEvent = context?.event_types?.APP_READY || event_types.APP_READY;
+    const chatChangedEvent = context?.event_types?.CHAT_CHANGED || event_types.CHAT_CHANGED;
     setTimeout(bootstrapUi, 0);
     context.eventSource?.on?.(readyEvent, () => {
         bootstrapUi();
     });
+    if (chatChangedEvent) {
+        context.eventSource?.on?.(chatChangedEvent, () => {
+            setTimeout(handleContextChanged, 0);
+        });
+    }
     context.eventSource?.on?.(event_types.CHARACTER_MESSAGE_RENDERED, () => {
         setTimeout(() => cleanupRenderedComics(document.getElementById('chat') || document.body), 0);
     });
@@ -223,6 +231,12 @@ function bootstrapUi() {
     installChatObserver();
 }
 
+function handleContextChanged() {
+    getSettings();
+    refreshSettingsUi();
+    if (state.wardrobeModal?.isConnected) renderWardrobeModal();
+}
+
 function getSettings() {
     if (!extension_settings[MODULE_NAME]) {
         extension_settings[MODULE_NAME] = structuredClone(DEFAULT_SETTINGS);
@@ -234,6 +248,10 @@ function getSettings() {
             settings[key] = structuredClone(value);
             dirty = true;
         }
+    }
+    if (Number(settings.schemaVersion || 0) < DEFAULT_SETTINGS.schemaVersion) {
+        settings.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
+        dirty = true;
     }
     settings.enabled = Boolean(settings.enabled);
     settings.showFab = Boolean(settings.showFab);
@@ -259,7 +277,10 @@ function getSettings() {
     if (!getStylePresetById(settings.stylePreset, settings)) settings.stylePreset = DEFAULT_SETTINGS.stylePreset;
     if (!getLayoutPresetById(settings.layout, settings)) settings.layout = DEFAULT_SETTINGS.layout;
     if (!['panels', 'single'].includes(settings.generationMode)) settings.generationMode = DEFAULT_SETTINGS.generationMode;
-    if (!['model', 'html'].includes(settings.bubbleMode)) settings.bubbleMode = DEFAULT_SETTINGS.bubbleMode;
+    if (settings.bubbleMode !== 'model') {
+        settings.bubbleMode = 'model';
+        dirty = true;
+    }
     if (!['new', 'append_last'].includes(settings.insertMode)) settings.insertMode = DEFAULT_SETTINGS.insertMode;
     settings.panelCount = clampInt(settings.panelCount, 1, MAX_PANELS, DEFAULT_SETTINGS.panelCount);
     settings.concurrency = clampInt(settings.concurrency, 1, 4, DEFAULT_SETTINGS.concurrency);
@@ -270,7 +291,6 @@ function getSettings() {
     if (!VALID_ASPECT_RATIOS.includes(settings.aspectRatio) && settings.aspectRatio !== 'auto') settings.aspectRatio = DEFAULT_SETTINGS.aspectRatio;
     if (!VALID_ASPECT_RATIOS.includes(settings.naisteraAspectRatio) && settings.naisteraAspectRatio !== 'auto') settings.naisteraAspectRatio = DEFAULT_SETTINGS.naisteraAspectRatio;
     if (!settings.negativePrompt) settings.negativePrompt = DEFAULT_NEGATIVE_PROMPT;
-    settings.references = normalizeReferences(settings.references);
     if (!Array.isArray(settings.wardrobeItems)) settings.wardrobeItems = [];
     if (!settings.wardrobeAssignments || typeof settings.wardrobeAssignments !== 'object') settings.wardrobeAssignments = {};
     if (Array.isArray(settings.wardrobe) && settings.wardrobe.some(item => item?.path || item?.description || item?.name)) {
@@ -280,6 +300,22 @@ function getSettings() {
     settings.wardrobeItems = normalizeWardrobeItems(settings.wardrobeItems);
     settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
     settings.wardrobe = [];
+    if (!settings.wardrobeProfiles || typeof settings.wardrobeProfiles !== 'object' || Array.isArray(settings.wardrobeProfiles)) {
+        settings.wardrobeProfiles = {};
+        dirty = true;
+    }
+    const wardrobeProfileKey = getWardrobeProfileKey();
+    const legacyWardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
+    const hasLegacyWardrobeAssignments = !settings.activeWardrobeProfileKey && hasAnyWardrobeAssignment(legacyWardrobeAssignments);
+    if (!settings.wardrobeProfiles[wardrobeProfileKey] && hasLegacyWardrobeAssignments) {
+        settings.wardrobeProfiles[wardrobeProfileKey] = structuredClone(legacyWardrobeAssignments);
+        dirty = true;
+    }
+    if (settings.activeWardrobeProfileKey !== wardrobeProfileKey) {
+        settings.activeWardrobeProfileKey = wardrobeProfileKey;
+        dirty = true;
+    }
+    settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeProfiles[wardrobeProfileKey] || {});
     if (settings.savedDraft && typeof settings.savedDraft !== 'object') {
         settings.savedDraft = null;
         dirty = true;
@@ -296,9 +332,13 @@ function getSettings() {
         dirty = true;
     }
     const referenceProfileKey = getReferenceProfileKey();
+    const legacyReferenceProfileKey = getLegacyReferenceProfileKey();
     const existingReferences = normalizeReferences(settings.references);
     const hasLegacyReferences = !settings.activeReferenceProfileKey && existingReferences.some(ref => ref.path || ref.name || ref.description);
-    if (!settings.referenceProfiles[referenceProfileKey] && hasLegacyReferences) {
+    if (!settings.referenceProfiles[referenceProfileKey] && settings.referenceProfiles[legacyReferenceProfileKey]) {
+        settings.referenceProfiles[referenceProfileKey] = structuredClone(normalizeReferences(settings.referenceProfiles[legacyReferenceProfileKey]));
+        dirty = true;
+    } else if (!settings.referenceProfiles[referenceProfileKey] && hasLegacyReferences) {
         settings.referenceProfiles[referenceProfileKey] = structuredClone(existingReferences);
         dirty = true;
     }
@@ -395,6 +435,22 @@ function normalizeWardrobeAssignment(rawAssignment = {}) {
         accessories: String(rawAssignment.accessories || ''),
         hair: String(rawAssignment.hair || ''),
     };
+}
+
+function hasAnyWardrobeAssignment(assignments) {
+    return Object.values(assignments || {}).some(assignment =>
+        WARDROBE_CATEGORY_ORDER.some(category => String(assignment?.[category] || '').trim()));
+}
+
+function persistWardrobeAssignments(settings) {
+    if (!settings) return;
+    const profileKey = getWardrobeProfileKey();
+    if (!settings.wardrobeProfiles || typeof settings.wardrobeProfiles !== 'object' || Array.isArray(settings.wardrobeProfiles)) {
+        settings.wardrobeProfiles = {};
+    }
+    settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
+    settings.wardrobeProfiles[profileKey] = structuredClone(settings.wardrobeAssignments);
+    settings.activeWardrobeProfileKey = profileKey;
 }
 
 function migrateLegacyWardrobe(settings) {
@@ -591,13 +647,6 @@ function createSettingsUi() {
                     </div>
                     <div class="bbcf-grid-2">
                         <div class="bbcf-row">
-                            <label for="bbcf-bubble-mode">Бабблы</label>
-                            <select id="bbcf-bubble-mode" class="text_pole">
-                                ${option('model', settings.bubbleMode, 'Рисует модель')}
-                                ${option('html', settings.bubbleMode, 'HTML поверх картинки')}
-                            </select>
-                        </div>
-                        <div class="bbcf-row">
                             <label for="bbcf-insert-mode">Отправка в чат</label>
                             <select id="bbcf-insert-mode" class="text_pole">
                                 ${option('new', settings.insertMode, 'Новым сообщением')}
@@ -719,7 +768,6 @@ function bindSettingsUi(root) {
     bindSettingInput(root, '#bbcf-naistera-preset', 'naisteraPreset');
     bindSettingInput(root, '#bbcf-timeout', 'timeoutMs', 'seconds');
     bindSettingInput(root, '#bbcf-generation-mode', 'generationMode');
-    bindSettingInput(root, '#bbcf-bubble-mode', 'bubbleMode');
     bindSettingInput(root, '#bbcf-insert-mode', 'insertMode');
     bindSettingInput(root, '#bbcf-cooldown', 'requestCooldownMs', 'cooldownSeconds');
     bindSettingInput(root, '#bbcf-panel-count', 'panelCount', 'int');
@@ -1019,6 +1067,7 @@ function bindWardrobeModalEvents(root) {
                 state.wardrobeCategory = 'all';
             }
             state.wardrobeTag = 'all';
+            persistWardrobeAssignments(settings);
             saveSettings();
             renderWardrobeModal();
         });
@@ -1174,6 +1223,7 @@ function equipWardrobeItem(id) {
     }
     assignment[item.category] = assignment[item.category] === item.id ? '' : item.id;
     settings.wardrobeAssignments[state.wardrobeOwner] = assignment;
+    persistWardrobeAssignments(settings);
     saveSettings();
     refreshSettingsUi();
 }
@@ -1184,6 +1234,7 @@ function clearWardrobeSlot(category) {
     if (WARDROBE_CATEGORIES[category]) {
         assignment[category] = '';
         settings.wardrobeAssignments[state.wardrobeOwner] = assignment;
+        persistWardrobeAssignments(settings);
         saveSettings();
         refreshSettingsUi();
     }
@@ -1201,6 +1252,14 @@ function deleteWardrobeItem(id) {
             if (assignment?.[category] === id) assignment[category] = '';
         }
     }
+    for (const assignments of Object.values(settings.wardrobeProfiles || {})) {
+        for (const assignment of Object.values(assignments || {})) {
+            for (const category of WARDROBE_CATEGORY_ORDER) {
+                if (assignment?.[category] === id) assignment[category] = '';
+            }
+        }
+    }
+    persistWardrobeAssignments(settings);
     saveSettings();
     refreshSettingsUi();
 }
@@ -1833,13 +1892,6 @@ function openForgeModal() {
                     </div>
                     <div class="bbcf-grid-2">
                         <div class="bbcf-field">
-                            <label for="bbcf-draft-bubble-mode">Бабблы</label>
-                            <select id="bbcf-draft-bubble-mode" class="text_pole">
-                                ${option('model', savedDraft.bubbleMode, 'Рисует модель')}
-                                ${option('html', savedDraft.bubbleMode, 'HTML поверх картинки')}
-                            </select>
-                        </div>
-                        <div class="bbcf-field">
                             <label for="bbcf-draft-insert-mode">Отправка</label>
                             <select id="bbcf-draft-insert-mode" class="text_pole">
                                 ${option('new', savedDraft.insertMode, 'Новым сообщением')}
@@ -1886,7 +1938,7 @@ function openForgeModal() {
                         <textarea id="bbcf-draft-notes" class="text_pole" rows="5" placeholder="1. Общий план коридора&#10;2. Крупный план лица&#10;3. Комедийный insert">${escapeHtml(savedDraft.panelNotes)}</textarea>
                     </div>
                     <div class="bbcf-field">
-                        <label for="bbcf-draft-bubbles">Реплики HTML: panel | type | position | text</label>
+                        <label for="bbcf-draft-bubbles">Реплики для модели: panel | type | position | text</label>
                         <textarea id="bbcf-draft-bubbles" class="text_pole" rows="4" placeholder="1|speech|top-left|Ты правда это сказала?&#10;2|thought|bottom-right|Сердце сбилось с ритма">${escapeHtml(savedDraft.bubbles)}</textarea>
                     </div>
                     <div class="bbcf-grid-2">
@@ -2014,7 +2066,7 @@ function readDraftFromModal(root) {
     return {
         title: valueOf(root, '#bbcf-draft-title') || 'Comic page',
         generationMode: valueOf(root, '#bbcf-draft-mode') || getSettings().generationMode,
-        bubbleMode: valueOf(root, '#bbcf-draft-bubble-mode') || getSettings().bubbleMode,
+        bubbleMode: 'model',
         insertMode: valueOf(root, '#bbcf-draft-insert-mode') || getSettings().insertMode,
         panelCount: clampInt(valueOf(root, '#bbcf-draft-count'), 1, MAX_PANELS, getSettings().panelCount),
         layout: valueOf(root, '#bbcf-draft-layout') || getSettings().layout,
@@ -2035,7 +2087,7 @@ function getSavedDraft(settings = getSettings()) {
     return {
         title: String(raw.title || 'Comic page'),
         generationMode: ['panels', 'single'].includes(raw.generationMode) ? raw.generationMode : settings.generationMode,
-        bubbleMode: ['model', 'html'].includes(raw.bubbleMode) ? raw.bubbleMode : settings.bubbleMode,
+        bubbleMode: 'model',
         insertMode: ['new', 'append_last'].includes(raw.insertMode) ? raw.insertMode : settings.insertMode,
         panelCount: clampInt(raw.panelCount, 1, MAX_PANELS, settings.panelCount),
         layout: getLayoutPresetById(raw.layout, settings) ? raw.layout : settings.layout,
@@ -2056,7 +2108,7 @@ function saveDraftToSettings(draft) {
     settings.savedDraft = {
         title: String(draft.title || 'Comic page'),
         generationMode: ['panels', 'single'].includes(draft.generationMode) ? draft.generationMode : settings.generationMode,
-        bubbleMode: ['model', 'html'].includes(draft.bubbleMode) ? draft.bubbleMode : settings.bubbleMode,
+        bubbleMode: 'model',
         insertMode: ['new', 'append_last'].includes(draft.insertMode) ? draft.insertMode : settings.insertMode,
         panelCount: clampInt(draft.panelCount, 1, MAX_PANELS, settings.panelCount),
         layout: draft.layout || settings.layout,
@@ -2261,7 +2313,6 @@ function buildPanelPlans(draft) {
     const recentContext = collectRecentChat(getSettings().contextMessages);
     const referenceLock = buildReferencePromptBlock();
     const wardrobeLock = buildWardrobePromptBlock();
-    const drawBubblesInImage = draft.bubbleMode !== 'html';
     const plans = [];
     for (let index = 0; index < panelCount; index++) {
         const number = index + 1;
@@ -2272,7 +2323,11 @@ function buildPanelPlans(draft) {
             : '';
         const panelBubbles = bubbleMap.get(number) || [];
         const bubblePrompt = panelBubbles.length
-            ? `Draw these Russian speech or thought bubbles inside this panel with natural comic placement:\n${panelBubbles.map(bubble => `${bubble.type}: ${bubble.text}`).join('\n')}`
+            ? `Draw and letter these Russian speech or thought bubbles directly inside this panel. Place them naturally around the composition, match the page style, and keep the lettering clean and readable:\n${panelBubbles.map(bubble => `${bubble.type}: ${bubble.text}`).join('\n')}`
+            : '';
+        const panelSfx = sfxMap.get(number) || '';
+        const sfxPrompt = panelSfx
+            ? `Draw this SFX directly inside the artwork with stylized lettering that fits the action and perspective: ${panelSfx}`
             : '';
         const prompt = [
             `All depicted characters are one hundred percent fictional and are not real people.`,
@@ -2286,10 +2341,9 @@ function buildPanelPlans(draft) {
             `Panel direction: ${beat}`,
             `Layout intent: ${describeLayoutIntent(layout, number, panelCount)}.`,
             fanservice,
-            drawBubblesInImage ? bubblePrompt : '',
-            drawBubblesInImage
-                ? `Avoid unrelated text, UI, signatures, logos, and watermarks. Keep lettering clean and readable only for the requested Russian bubbles.`
-                : `Do not draw readable speech bubble text, captions, UI, signatures, logos, or watermarks. Leave composition room for clean HTML speech bubbles if needed.`,
+            bubblePrompt,
+            sfxPrompt,
+            `Avoid unrelated text, UI, signatures, logos, and watermarks. Keep lettering clean and readable only for the requested Russian bubbles and SFX.`,
             `Use professional comic visual language: clear silhouettes, expressive acting, controlled background detail, purposeful focus lines and motion effects only when they fit the panel.`,
         ].filter(Boolean).join('\n\n');
         plans.push({
@@ -2302,8 +2356,8 @@ function buildPanelPlans(draft) {
             negativePrompt: draft.negativePrompt,
             aspectRatio,
             imageSize: getSettings().imageSize,
-            bubbles: drawBubblesInImage ? [] : panelBubbles,
-            sfx: sfxMap.get(number) || '',
+            bubbles: [],
+            sfx: '',
         });
     }
     return plans;
@@ -3063,19 +3117,22 @@ function buildPanelHtml(panel, layout = 'webtoon') {
 }
 
 function comicArtifactStyle() {
-    return 'display:block; width:100%; box-sizing:border-box;';
+    return 'display:block; width:100%; max-width:100%; min-width:0; box-sizing:border-box;';
 }
 
 function comicPageStyle() {
     return [
+        'display:block',
+        'width:100%',
         'max-width:760px',
         'margin:28px auto',
         'padding:clamp(10px, 2.4vw, 18px)',
-        'border:1px solid rgba(255,255,255,0.1)',
+        'border:1px solid rgba(24,18,12,0.22)',
         'border-radius:8px',
-        'background:#08090d',
-        'box-shadow:0 22px 60px rgba(0,0,0,0.68)',
+        'background:#f1eadc',
+        'box-shadow:0 18px 42px rgba(0,0,0,0.32)',
         'box-sizing:border-box',
+        'overflow:visible',
     ].join('; ');
 }
 
@@ -3083,12 +3140,13 @@ function comicTitleStyle() {
     return [
         'display:flex',
         'align-items:center',
-        'justify-content:space-between',
+        'justify-content:center',
         'gap:12px',
         'margin:0 0 12px',
-        'color:#f7f4eb',
+        'color:#17120c',
         'font-size:1rem',
         'letter-spacing:0',
+        'text-align:center',
         'box-sizing:border-box',
     ].join('; ');
 }
@@ -3102,36 +3160,81 @@ function comicGridStyle(layout) {
         manga: 'repeat(5, minmax(0, 1fr))',
         dramatic: 'repeat(12, minmax(0, 1fr))',
     }[layout] || '1fr';
-    return `display:grid; grid-template-columns:${columns}; gap:10px; align-items:start; box-sizing:border-box;`;
+    return `display:grid; grid-template-columns:${columns}; gap:8px; align-items:start; width:100%; max-width:100%; min-width:0; box-sizing:border-box;`;
 }
 
 function panelStyle(layout, number = 1) {
-    const extra = [];
-    if (layout === 'cinematic') {
-        extra.push(number === 1 || number === 4 ? 'grid-column:1 / -1' : 'grid-column:span 3');
-    } else if (layout === 'manga') {
-        if (number === 1) extra.push('grid-column:span 3', 'grid-row:span 2');
-        else if (number === 4) extra.push('grid-column:1 / -1');
-        else extra.push('grid-column:span 2');
-    } else if (layout === 'dramatic') {
-        extra.push(number === 1 ? 'grid-column:1 / -1' : 'grid-column:span 6');
-    }
+    const extra = getPanelPlacementStyle(layout, number);
     return [
         'position:relative',
+        'display:block',
+        'width:100%',
         'min-width:0',
+        'min-height:0',
+        'max-width:100%',
+        'height:auto',
+        'aspect-ratio:auto',
+        'grid-row:auto',
+        'align-self:start',
+        'justify-self:stretch',
         'margin:0',
         'overflow:hidden',
-        'border:3px solid #f7f4eb',
+        'border:3px solid #15120d',
         'border-radius:4px',
-        'background:#111318',
+        'background:#fffaf0',
         'isolation:isolate',
         'box-sizing:border-box',
         ...extra,
     ].join('; ');
 }
 
+function getPanelPlacementStyle(layout, number = 1) {
+    const extra = [];
+    const columns = getLayoutColumnCount(layout);
+    const span = getPanelColumnSpan(layout, number);
+    if (span && columns > 1) {
+        extra.push(span >= columns ? 'grid-column:1 / -1' : `grid-column:span ${span}`);
+    } else if (layout === 'cinematic') {
+        extra.push(number === 1 || number === 4 ? 'grid-column:1 / -1' : 'grid-column:span 3');
+    } else if (layout === 'manga') {
+        if (number === 1) extra.push('grid-column:span 3');
+        else if (number === 4) extra.push('grid-column:1 / -1');
+        else extra.push('grid-column:span 2');
+    } else if (layout === 'dramatic') {
+        extra.push(number === 1 ? 'grid-column:1 / -1' : 'grid-column:span 6');
+    }
+    return extra;
+}
+
+function getPanelLayoutFromElement(figure) {
+    const page = figure?.closest?.('.bbcf-comic-page');
+    const layoutClass = Array.from(page?.classList || []).find(item => item.startsWith('bbcf-layout-'));
+    return layoutClass ? layoutClass.replace('bbcf-layout-', '') : 'webtoon';
+}
+
+function getLayoutColumnCount(layout) {
+    return {
+        grid: 2,
+        cinematic: 6,
+        manga: 5,
+        dramatic: 12,
+    }[layout] || 1;
+}
+
+function getPanelColumnSpan(layout, number = 1) {
+    if (layout === 'grid') return 1;
+    if (layout === 'cinematic') return number === 1 || number === 4 ? 6 : 3;
+    if (layout === 'manga') {
+        if (number === 1) return 3;
+        if (number === 4) return 5;
+        return 2;
+    }
+    if (layout === 'dramatic') return number === 1 ? 12 : 6;
+    return 0;
+}
+
 function panelImageStyle() {
-    return 'display:block; width:100%; height:auto; max-width:100%; border:0; box-sizing:border-box;';
+    return 'display:block; width:100%; height:auto; max-width:100%; min-width:0; border:0; object-fit:contain; object-position:center; box-sizing:border-box;';
 }
 
 function bubbleStyle(bubble, index) {
@@ -3632,7 +3735,6 @@ async function regeneratePanel(button) {
         toastr.error('Не удалось прочитать prompt панели.', 'Comic Forge');
         return;
     }
-    const oldSrc = img?.getAttribute('src') || '';
     const oldOuterHtml = figure.outerHTML;
     const status = document.createElement('div');
     status.className = 'bbcf-regen-status';
@@ -3661,8 +3763,10 @@ async function regeneratePanel(button) {
             figure.classList.remove('bbcf-panel-error');
         }
         img.setAttribute('src', newSrc);
-        if (oldSrc) await replacePanelSrcInChat(figure, oldSrc, newSrc);
-        else await replacePanelHtmlInChat(figure, oldOuterHtml);
+        img.setAttribute('style', panelImageStyle());
+        figure.setAttribute('style', panelStyle(getPanelLayoutFromElement(figure), panel.number));
+        status.remove();
+        await replacePanelHtmlInChat(figure, oldOuterHtml);
         const preview = state.modal?.querySelector('#bbcf-preview-content');
         if (preview?.contains(figure)) {
             cleanupRenderedComics(preview);
@@ -3683,19 +3787,6 @@ async function regeneratePanel(button) {
         status.remove();
         button.classList.remove('is-busy');
     }
-}
-
-async function replacePanelSrcInChat(figure, oldSrc, newSrc) {
-    if (!oldSrc || !newSrc || oldSrc === newSrc) return;
-    const messageElement = figure.closest('.mes');
-    const messageId = Number(messageElement?.getAttribute('mesid'));
-    const context = SillyTavern.getContext();
-    const message = Number.isInteger(messageId) ? context.chat?.[messageId] : null;
-    if (!message) return;
-    const replace = value => typeof value === 'string' ? value.split(oldSrc).join(newSrc) : value;
-    message.mes = replace(message.mes);
-    if (message.extra?.display_text) message.extra.display_text = replace(message.extra.display_text);
-    await saveCurrentChat(context);
 }
 
 async function replacePanelHtmlInChat(figure, oldOuterHtml) {
@@ -3760,11 +3851,47 @@ function getCurrentCharacterName() {
 }
 
 function getReferenceProfileKey() {
+    return getScopedProfileKey();
+}
+
+function getWardrobeProfileKey() {
+    return getScopedProfileKey();
+}
+
+function getLegacyReferenceProfileKey() {
     const context = SillyTavern.getContext();
     const character = context.characterId !== undefined ? context.characters?.[context.characterId] : null;
     const name = character?.name || context.name2 || 'global';
     const id = context.characterId !== undefined ? context.characterId : safeFilename(name).toLowerCase();
     return `character:${id}:${String(name || 'global').trim().toLowerCase()}`;
+}
+
+function getScopedProfileKey() {
+    const context = SillyTavern.getContext();
+    const groupId = context.groupId ?? context.group_id ?? context.selected_group;
+    if (groupId !== undefined && groupId !== null && groupId !== '') {
+        const group = Array.isArray(context.groups) ? context.groups.find(item => String(item?.id) === String(groupId)) : null;
+        return `group:${safeProfilePart(groupId)}:${safeProfilePart(group?.name || context.name2 || 'group')}`;
+    }
+    const character = context.characterId !== undefined ? context.characters?.[context.characterId] : null;
+    if (character) {
+        const stableId = character.avatar || character.name || context.characterId;
+        return `character:${safeProfilePart(stableId)}:${safeProfilePart(character.name || context.name2 || 'character')}`;
+    }
+    const chatId = context.chatId
+        || context.chat_id
+        || context.chatMetadata?.chat_id
+        || context.chatMetadata?.file_name
+        || context.chatMetadata?.chat_name
+        || context.chatMetadata?.name
+        || context.name2
+        || 'global';
+    return `chat:${safeProfilePart(chatId)}`;
+}
+
+function safeProfilePart(value) {
+    const text = String(value || 'global').trim().toLowerCase();
+    return encodeURIComponent(text).replace(/%/g, '').slice(0, 120) || 'global';
 }
 
 function makeId(prefix) {
