@@ -1,11 +1,14 @@
 {
-    "name": "BB-Comic-Forge",
     "display_name": "BB Comic Forge",
-    "description": "Standalone comic page generator with per-panel image generation, custom API settings, layouts, bubbles, and panel regeneration.",
-    "version": "0.1.0",
-    "author": "BruniikBron",
+    "name": "bb-comic-forge",
+    "loading_order": 22,
+    "requires": [],
+    "optional": [],
     "js": "index.js",
     "css": "style.css",
-    "requires": [],
-    "optional": []
+    "author": "BruniikBron",
+    "version": "0.2.0",
+    "description": "Standalone comic page generator with per-panel image generation, custom API settings, layouts, bubbles, and panel regeneration.",
+    "homePage": "",
+    "auto_update": false
 }

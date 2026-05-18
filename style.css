@@ -82,39 +82,14 @@
 #bbcf-settings .bbcf-grid-2 .bbcf-row {
     grid-template-columns: 1fr;
     align-items: start;
+    align-content: start;
+    row-gap: 4px;
 }
 
 #bbcf-settings .bbcf-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-}
-
-#bbcf-settings .bbcf-quick-steps {
-    display: grid;
-    gap: 6px;
-    margin-top: 2px;
-}
-
-#bbcf-settings .bbcf-quick-steps div {
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
-    gap: 8px;
-    align-items: start;
-    color: var(--bbcf-muted);
-    font-size: 0.84rem;
-    line-height: 1.35;
-}
-
-#bbcf-settings .bbcf-quick-steps b {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    background: rgba(98, 214, 210, 0.16);
-    color: var(--bbcf-cyan);
-    font-size: 0.78rem;
 }
 
 #bbcf-settings .bbcf-model-picker {
@@ -792,14 +767,39 @@
     gap: 8px;
 }
 
+.bbcf-modal-action,
 .bbcf-modal-close {
-    width: 36px;
+    min-width: 36px;
     height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 10px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.05);
     color: #eef2f7;
     cursor: pointer;
+    font-size: 0.84rem;
+    line-height: 1;
+}
+
+.bbcf-modal-minimize {
+    border-color: rgba(98, 214, 210, 0.38);
+    background: rgba(98, 214, 210, 0.1);
+    color: #c8fbf6;
+}
+
+.bbcf-modal-dismiss {
+    border-color: rgba(255, 104, 104, 0.42);
+    background: rgba(255, 104, 104, 0.1);
+    color: #ffd5d5;
+}
+
+.bbcf-modal-action i,
+.bbcf-modal-close i {
+    font-size: 0.95rem;
 }
 
 .bbcf-modal-body {
@@ -848,6 +848,25 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.035);
+}
+
+.bbcf-export-notice {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 12px;
+    padding: 9px 10px;
+    border: 1px solid rgba(98, 214, 210, 0.24);
+    border-radius: 8px;
+    background: rgba(98, 214, 210, 0.08);
+    color: #dffbf8;
+    font-size: 0.84rem;
+    overflow-wrap: anywhere;
+}
+
+.bbcf-export-notice a {
+    color: #9ee7e1;
 }
 
 .bbcf-history-header {
@@ -916,6 +935,7 @@
 .bbcf-field {
     display: grid;
     gap: 6px;
+    align-content: start;
     margin-bottom: 12px;
 }
 
@@ -1074,15 +1094,25 @@
     justify-content: center;
 }
 
+.bbcf-preset-save-card textarea {
+    min-height: 86px;
+    resize: vertical;
+}
+
 .bbcf-grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
 }
 
+.bbcf-grid-2 > .bbcf-field {
+    align-self: start;
+}
+
 .bbcf-toolbar {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
     padding-top: 12px;
     background: #11151d;
@@ -1536,7 +1566,7 @@ comics {
     .bbcf-layout-cinematic .bbcf-page-grid,
     .bbcf-layout-manga .bbcf-page-grid,
     .bbcf-layout-dramatic .bbcf-page-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
     }
 
     .bbcf-layout-grid .bbcf-panel,
@@ -1629,10 +1659,20 @@ comics {
 
     .bbcf-modal-header {
         padding: 10px;
+        gap: 8px;
     }
 
     .bbcf-modal-title {
         font-size: 0.9rem;
+    }
+
+    .bbcf-modal-header-actions {
+        gap: 5px;
+    }
+
+    .bbcf-modal-action {
+        padding: 0 8px;
+        font-size: 0.76rem;
     }
 
     .bbcf-modal-title .bbcf-muted {
