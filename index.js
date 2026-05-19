@@ -3157,11 +3157,9 @@ async function generatePanelComic(draft, plans, ui = {}) {
     const cooldown = settings.requestCooldownMs || 0;
     const providerCanReadImages = !['openai-images', 'onlysq-imagen'].includes(settings.apiType);
     const previousImageLimit = providerCanReadImages ? clampInt(settings.previousImageCount, 0, MAX_PREVIOUS_CONTEXT_IMAGES, 0) : 0;
-    const historyContextPaths = getRecentComicImagePaths(previousImageLimit);
-    const currentContextPaths = [];
+    const chatContextPaths = getRecentChatImagePaths(previousImageLimit);
     const concurrency = clampInt(settings.concurrency, 1, MAX_CONCURRENCY, DEFAULT_SETTINGS.concurrency);
     const useSequentialCooldown = cooldown > 0;
-    const useCurrentPageContext = previousImageLimit > 0 && (useSequentialCooldown || concurrency <= 1);
     const worker = async (panel, index = 0) => {
         throwIfAborted(ui.signal);
         if (useSequentialCooldown && index > 0) {
@@ -3171,18 +3169,11 @@ async function generatePanelComic(draft, plans, ui = {}) {
         updateProgress(ui.progressRoot, panel.number, 'running', 'Запрос отправлен');
         const stopTimer = startElapsedProgress(ui.progressRoot, panel.number, 'Генерация');
         try {
-            const panelContext = previousImageLimit > 0
-                ? uniqueStrings([...(useCurrentPageContext ? currentContextPaths : []), ...historyContextPaths]).slice(0, previousImageLimit)
-                : [];
-            const dataUrl = await generatePanelImage({ ...panel, previousImagePaths: panelContext }, status => updateProgress(ui.progressRoot, panel.number, 'running', status), ui.signal);
+            const dataUrl = await generatePanelImage({ ...panel, previousImagePaths: chatContextPaths }, status => updateProgress(ui.progressRoot, panel.number, 'running', status), ui.signal);
             stopTimer();
             throwIfAborted(ui.signal);
             updateProgress(ui.progressRoot, panel.number, 'running', 'Сохранение');
             const imagePath = await saveImageToFile(dataUrl, panel.number, ui.signal);
-            if (useCurrentPageContext) {
-                currentContextPaths.push(imagePath);
-                while (currentContextPaths.length > previousImageLimit) currentContextPaths.shift();
-            }
             generated[panel.number - 1] = { ...panel, imagePath };
             updateProgress(ui.progressRoot, panel.number, 'done', 'Готово');
         } catch (error) {
@@ -3213,7 +3204,7 @@ async function generateSingleImageComic(draft, plans, ui = {}) {
     const previousImageLimit = providerCanReadImages ? clampInt(settings.previousImageCount, 0, MAX_PREVIOUS_CONTEXT_IMAGES, 0) : 0;
     const panel = {
         ...buildSinglePagePanel(draft, plans),
-        previousImagePaths: getRecentComicImagePaths(previousImageLimit),
+        previousImagePaths: getRecentChatImagePaths(previousImageLimit),
     };
     updateProgress(ui.progressRoot, 1, 'running', 'Запрос одной страницей');
     const stopTimer = startElapsedProgress(ui.progressRoot, 1, 'Генерация');
@@ -4541,20 +4532,56 @@ function getCommonImageFolder(paths) {
     return paths.every(path => String(path || '').startsWith(`${folder}/`)) ? folder : '';
 }
 
-function getRecentComicImagePaths(count = getSettings().previousImageCount) {
+function getRecentChatImagePaths(count = getSettings().previousImageCount) {
     const max = clampInt(count, 0, MAX_PREVIOUS_CONTEXT_IMAGES, 0);
     if (!max) return [];
+    const context = SillyTavern.getContext();
+    const chat = Array.isArray(context.chat) ? context.chat : [];
     const paths = [];
-    for (const record of getScopedComicHistory()) {
-        const recordPaths = Array.isArray(record.imagePaths) && record.imagePaths.length
-            ? record.imagePaths
-            : extractImagePathsFromHtml(record.html || '');
-        for (const path of recordPaths) {
+    for (let index = chat.length - 1; index >= 0; index--) {
+        for (const path of extractImagePathsFromMessage(chat[index])) {
             if (path && !paths.includes(path)) paths.push(path);
             if (paths.length >= max) return paths;
         }
     }
     return paths;
+}
+
+function extractImagePathsFromMessage(message) {
+    if (!message || typeof message !== 'object') return [];
+    const paths = [
+        ...extractImagePathsFromHtml(message.mes || ''),
+        ...extractImagePathsFromHtml(message.extra?.display_text || ''),
+        ...extractMarkdownImagePaths(message.mes || ''),
+        ...extractMarkdownImagePaths(message.extra?.display_text || ''),
+        ...extractMediaImagePaths(message.extra?.media),
+    ];
+    return uniqueStrings(paths.filter(isUsableImagePath));
+}
+
+function extractMarkdownImagePaths(text) {
+    const paths = [];
+    const regex = /!\[[^\]]*]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+    let match;
+    while ((match = regex.exec(String(text || '')))) paths.push(match[1]);
+    return paths;
+}
+
+function extractMediaImagePaths(media) {
+    if (!Array.isArray(media)) return [];
+    return media
+        .filter(item => String(item?.type || '').toLowerCase() === 'image')
+        .map(item => item.url || item.path || item.src)
+        .filter(Boolean);
+}
+
+function isUsableImagePath(path) {
+    const value = String(path || '').trim();
+    if (!value) return false;
+    return /^data:image\//i.test(value)
+        || /^https?:\/\//i.test(value)
+        || /^\/?user\/images\//i.test(value)
+        || /\.(?:png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(value);
 }
 
 function bindComicUtilityActions(root) {
@@ -4797,7 +4824,7 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
         const plans = buildPanelPlans(draft);
         const plan = plans.find(panel => panel.number === panelNumber);
         if (!plan) throw new Error(`Panel ${panelNumber} is not in this draft.`);
-        plan.previousImagePaths = getRecentComicImagePaths();
+        plan.previousImagePaths = getRecentChatImagePaths();
         renderProgress(root.querySelector('#bbcf-progress'), [plan]);
         updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'running', 'Запрос отправлен');
         const stopTimer = startElapsedProgress(root.querySelector('#bbcf-progress'), panelNumber, 'Перегенерация');
@@ -5057,7 +5084,7 @@ async function regeneratePanel(button) {
             aspectRatio: data.aspectRatio || '1:1',
             imageSize: data.imageSize || getSettings().imageSize,
             singlePage: Boolean(data.singlePage),
-            previousImagePaths: getRecentComicImagePaths(),
+            previousImagePaths: getRecentChatImagePaths(),
         };
         const dataUrl = await generatePanelImage(panel, text => { status.textContent = text || 'Перегенерация панели...'; });
         status.textContent = 'Сохранение...';
