@@ -200,6 +200,10 @@ const state = {
     observer: null,
     autoRunning: false,
     lastAutoMessageId: null,
+    lastAutoTriggerKey: null,
+    generationAbortController: null,
+    generationCancelRequested: false,
+    generationCancelNotified: false,
     lastComic: null,
     pendingComic: null,
     wardrobeModal: null,
@@ -226,8 +230,8 @@ function initialize() {
             setTimeout(handleContextChanged, 0);
         });
     }
-    context.eventSource?.on?.(event_types.CHARACTER_MESSAGE_RENDERED, (messageId) => {
-        setTimeout(() => handleCharacterMessageRendered(messageId), 0);
+    context.eventSource?.on?.(event_types.CHARACTER_MESSAGE_RENDERED, (messageId, type) => {
+        setTimeout(() => handleCharacterMessageRendered(messageId, type), 0);
     });
     window.BBComicForge = {
         open: openForgeModal,
@@ -244,28 +248,36 @@ function bootstrapUi() {
     installChatObserver();
 }
 
-function handleCharacterMessageRendered(messageId) {
+function handleCharacterMessageRendered(messageId, type = '') {
     cleanupRenderedComics(document.getElementById('chat') || document.body);
-    void runAutoComicAfterMessage(messageId);
+    void runAutoComicAfterMessage(messageId, type);
 }
 
 function handleContextChanged() {
     getSettings();
+    state.lastAutoTriggerKey = null;
     refreshSettingsUi();
     if (state.wardrobeModal?.isConnected) renderWardrobeModal();
 }
 
-async function runAutoComicAfterMessage(rawMessageId) {
+async function runAutoComicAfterMessage(rawMessageId, renderType = '') {
     const settings = getSettings();
     if (!settings.enabled || !settings.autoMode || state.autoRunning || state.generating) return;
+    if (renderType === 'first_message') return;
     const messageId = resolveMessageId(rawMessageId);
-    if (!Number.isInteger(messageId) || state.lastAutoMessageId === messageId) return;
+    if (!Number.isInteger(messageId)) return;
     const context = SillyTavern.getContext();
-    const message = Array.isArray(context.chat) ? context.chat[messageId] : null;
+    const chat = Array.isArray(context.chat) ? context.chat : [];
+    const message = chat[messageId] || null;
     if (!message || message.is_user || message.is_system || message.extra?.from === MODULE_NAME) return;
+    if (!hasUserMessageBefore(chat, messageId)) return;
+    const triggerKey = getAutoTriggerKey(messageId, message, renderType);
+    if (state.lastAutoTriggerKey === triggerKey) return;
     state.lastAutoMessageId = messageId;
+    state.lastAutoTriggerKey = triggerKey;
     state.autoRunning = true;
     state.generating = true;
+    const controller = startGenerationSession();
     updateFloatingButton();
     toastr.info('Comic Forge: авто-генерация комикса запущена.', 'Comic Forge');
     let root = null;
@@ -274,22 +286,56 @@ async function runAutoComicAfterMessage(rawMessageId) {
         applyDefaultPageSettingsToModal(root);
         renderProgress(root.querySelector('#bbcf-progress'), [{ number: 1, title: 'Черновик' }]);
         updateProgress(root.querySelector('#bbcf-progress'), 1, 'running', 'Черновик из чата');
-        await fillDraftFromAi(root, { throwErrors: true });
+        await fillDraftFromAi(root, { throwErrors: true, signal: controller.signal });
+        throwIfAborted(controller.signal);
         const draft = readDraftFromModal(root);
         if (!draft.scene.trim()) throw new Error('AI-черновик не заполнил сцену.');
         state.generating = false;
+        finishGenerationSession(controller);
         await handleGenerateFromModal(root);
         if (state.pendingComic?.html && !state.pendingComic.sent) {
             await sendPendingComicToChat(root, { targetMessageId: messageId });
         }
     } catch (error) {
-        console.error('[BB Comic Forge] auto comic failed', error);
-        toastr.error(error?.message || String(error), 'Comic Forge');
+        if (isAbortError(error) || state.generationCancelRequested) {
+            console.info('[BB Comic Forge] auto comic cancelled');
+        } else {
+            console.error('[BB Comic Forge] auto comic failed', error);
+            toastr.error(error?.message || String(error), 'Comic Forge');
+        }
         state.generating = false;
     } finally {
+        finishGenerationSession(controller);
         state.autoRunning = false;
         updateFloatingButton();
     }
+}
+
+function hasUserMessageBefore(chat, messageId) {
+    for (let index = 0; index < messageId; index++) {
+        const message = chat[index];
+        if (message?.is_user && !message?.is_system) return true;
+    }
+    return false;
+}
+
+function getAutoTriggerKey(messageId, message, renderType = '') {
+    return [
+        messageId,
+        renderType || '',
+        message?.swipe_id ?? '',
+        message?.send_date || '',
+        message?.gen_finished || '',
+        hashText(String(message?.mes || '')),
+    ].join('|');
+}
+
+function hashText(text) {
+    let hash = 0;
+    for (let index = 0; index < text.length; index++) {
+        hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+    }
+    return `${text.length}:${hash}`;
 }
 
 function resolveMessageId(value) {
@@ -802,7 +848,7 @@ function createSettingsUi() {
                     </div>
                     <details class="bbcf-preset-help">
                         <summary><i class="fa-solid fa-palette"></i><span>Примеры и сохранение</span></summary>
-                        <div class="bbcf-preset-examples">
+                        <div class="bbcf-preset-examples" data-bbcf-preset-list>
                             ${buildStyleExamplesHtml(settings)}
                             ${buildLayoutExamplesHtml(settings)}
                         </div>
@@ -866,6 +912,7 @@ function bindSettingsUi(root) {
     root.querySelector('#bbcf-load-draft-models')?.addEventListener('click', () => loadDraftModels({ button: root.querySelector('#bbcf-load-draft-models') }));
     root.querySelector('#bbcf-test-draft-api')?.addEventListener('click', testDraftSettings);
     root.querySelector('#bbcf-open-wardrobe')?.addEventListener('click', openWardrobeModal);
+    bindPresetDeleteActions(root);
     bindReferenceSettings(root);
     bindSettingInput(root, '#bbcf-enabled', 'enabled', 'checked', () => updateFloatingButton());
     bindSettingInput(root, '#bbcf-show-fab', 'showFab', 'checked', () => updateFloatingButton());
@@ -1772,10 +1819,19 @@ function buildLayoutOptionsHtml(settings, selected) {
 }
 
 function buildStyleExamplesHtml(settings) {
-    const saved = settings.savedStyles.map(style => ({ label: `★ ${style.label}`, prompt: style.prompt }));
-    const examples = [...Object.values(STYLE_PRESETS).filter(preset => preset.prompt), ...saved].slice(0, 12);
+    const builtin = Object.values(STYLE_PRESETS)
+        .filter(preset => preset.prompt)
+        .map(preset => ({ label: preset.label, prompt: preset.prompt, savedId: '' }));
+    const saved = settings.savedStyles.map(style => ({ label: `★ ${style.label}`, prompt: style.prompt, savedId: style.id }));
+    const examples = [...builtin, ...saved];
     return `<div class="bbcf-preset-example-group"><strong>Стили</strong>${examples.map(item => `
-        <div class="bbcf-preset-example"><span>${escapeHtml(item.label)}</span><p>${escapeHtml(item.prompt)}</p></div>
+        <div class="bbcf-preset-example">
+            <div class="bbcf-preset-example-top">
+                <span>${escapeHtml(item.label)}</span>
+                ${item.savedId ? `<button class="menu_button bbcf-icon-button bbcf-danger" type="button" title="Удалить стиль" aria-label="Удалить стиль" data-bbcf-delete-style="${escapeHtml(item.savedId)}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+            </div>
+            <p>${escapeHtml(item.prompt)}</p>
+        </div>
     `).join('')}</div>`;
 }
 
@@ -1784,19 +1840,103 @@ function buildLayoutExamplesHtml(settings) {
         label: `★ ${layout.label}`,
         pattern: layout.pattern,
         intent: layout.intent,
+        savedId: layout.id,
     }));
     const builtin = Object.keys(ASPECT_PATTERNS).map(key => ({
         label: key,
         pattern: ASPECT_PATTERNS[key],
         intent: describeLayoutIntent(key, 1, 4),
+        savedId: '',
     }));
-    return `<div class="bbcf-preset-example-group"><strong>Макеты</strong>${[...builtin, ...saved].slice(0, 12).map(item => `
+    return `<div class="bbcf-preset-example-group"><strong>Макеты</strong>${[...builtin, ...saved].map(item => `
         <div class="bbcf-layout-example">
-            <span>${escapeHtml(item.label)}</span>
-            <div>${item.pattern.slice(0, 6).map(ratio => `<b>${escapeHtml(ratio)}</b>`).join('')}</div>
+            <div class="bbcf-preset-example-top">
+                <span>${escapeHtml(item.label)}</span>
+                ${item.savedId ? `<button class="menu_button bbcf-icon-button bbcf-danger" type="button" title="Удалить макет" aria-label="Удалить макет" data-bbcf-delete-layout="${escapeHtml(item.savedId)}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
+            </div>
+            <div class="bbcf-layout-pattern">${item.pattern.slice(0, 6).map(ratio => `<b>${escapeHtml(ratio)}</b>`).join('')}</div>
             <p>${escapeHtml(item.intent || '')}</p>
         </div>
     `).join('')}</div>`;
+}
+
+function bindPresetDeleteActions(root) {
+    if (!root || root.dataset.bbcfPresetDeleteBound === '1') return;
+    root.dataset.bbcfPresetDeleteBound = '1';
+    root.addEventListener('click', event => {
+        const styleButton = event.target.closest?.('[data-bbcf-delete-style]');
+        if (styleButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            deleteSavedStyle(styleButton.getAttribute('data-bbcf-delete-style'));
+            return;
+        }
+        const layoutButton = event.target.closest?.('[data-bbcf-delete-layout]');
+        if (layoutButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            deleteSavedLayout(layoutButton.getAttribute('data-bbcf-delete-layout'));
+        }
+    });
+}
+
+function syncPresetUi({ styleValue = null, layoutValue = null } = {}) {
+    const settings = getSettings();
+    const settingsRoot = document.getElementById(SETTINGS_ID);
+    const draftRoot = state.modal?.isConnected ? state.modal : null;
+    const selectedStyle = getStylePresetById(styleValue, settings) ? styleValue : settings.stylePreset;
+    const selectedLayout = getLayoutPresetById(layoutValue, settings) ? layoutValue : settings.layout;
+    updateSelectOptions(settingsRoot?.querySelector('#bbcf-style-preset'), buildStyleOptionsHtml(settings, selectedStyle), selectedStyle);
+    updateSelectOptions(settingsRoot?.querySelector('#bbcf-layout'), buildLayoutOptionsHtml(settings, selectedLayout), selectedLayout);
+    const draftStyle = getStylePresetById(valueOf(draftRoot, '#bbcf-draft-style'), settings) ? valueOf(draftRoot, '#bbcf-draft-style') : selectedStyle;
+    const draftLayout = getLayoutPresetById(valueOf(draftRoot, '#bbcf-draft-layout'), settings) ? valueOf(draftRoot, '#bbcf-draft-layout') : selectedLayout;
+    updateSelectOptions(draftRoot?.querySelector('#bbcf-draft-style'), buildStyleOptionsHtml(settings, draftStyle), draftStyle);
+    updateSelectOptions(draftRoot?.querySelector('#bbcf-draft-layout'), buildLayoutOptionsHtml(settings, draftLayout), draftLayout);
+    for (const root of [settingsRoot, draftRoot].filter(Boolean)) {
+        const list = root.querySelector('[data-bbcf-preset-list]');
+        if (list) list.innerHTML = `${buildStyleExamplesHtml(settings)}${buildLayoutExamplesHtml(settings)}`;
+    }
+}
+
+function updateSelectOptions(select, html, value) {
+    if (!select) return;
+    select.innerHTML = html;
+    select.value = value || '';
+    if (select.value !== value && select.options.length) select.selectedIndex = 0;
+}
+
+function deleteSavedStyle(id) {
+    const savedId = String(id || '').trim();
+    if (!savedId) return;
+    const settings = getSettings();
+    const style = settings.savedStyles.find(item => item.id === savedId);
+    if (!style) return;
+    if (!window.confirm(`Удалить сохраненный стиль "${style.label}"?`)) return;
+    settings.savedStyles = settings.savedStyles.filter(item => item.id !== savedId);
+    const deletedValue = `saved:${savedId}`;
+    if (settings.stylePreset === deletedValue) settings.stylePreset = DEFAULT_SETTINGS.stylePreset;
+    if (settings.savedDraft?.stylePreset === deletedValue) settings.savedDraft.stylePreset = settings.stylePreset;
+    saveSettings();
+    syncPresetUi();
+    saveDraftFromModal(state.modal);
+    toastr.success('Стиль удален.', 'Comic Forge');
+}
+
+function deleteSavedLayout(id) {
+    const savedId = String(id || '').trim();
+    if (!savedId) return;
+    const settings = getSettings();
+    const layout = settings.savedLayouts.find(item => item.id === savedId);
+    if (!layout) return;
+    if (!window.confirm(`Удалить сохраненный макет "${layout.label}"?`)) return;
+    settings.savedLayouts = settings.savedLayouts.filter(item => item.id !== savedId);
+    const deletedValue = `saved:${savedId}`;
+    if (settings.layout === deletedValue) settings.layout = DEFAULT_SETTINGS.layout;
+    if (settings.savedDraft?.layout === deletedValue) settings.savedDraft.layout = settings.layout;
+    saveSettings();
+    syncPresetUi();
+    saveDraftFromModal(state.modal);
+    toastr.success('Макет удален.', 'Comic Forge');
 }
 
 function saveStyleFromSettings(root) {
@@ -1814,7 +1954,7 @@ function saveStyleFromSettings(root) {
     settings.savedStyles.unshift(style);
     settings.stylePreset = `saved:${style.id}`;
     saveSettings();
-    refreshSettingsUi();
+    syncPresetUi({ styleValue: `saved:${style.id}` });
     toastr.success('Стиль сохранён.', 'Comic Forge');
 }
 
@@ -1829,7 +1969,7 @@ function saveLayoutFromSettings(root) {
     settings.savedLayouts.unshift(layout);
     settings.layout = `saved:${layout.id}`;
     saveSettings();
-    refreshSettingsUi();
+    syncPresetUi({ layoutValue: `saved:${layout.id}` });
     toastr.success('Макет сохранён.', 'Comic Forge');
 }
 
@@ -1848,9 +1988,9 @@ function saveStyleFromDraft(root) {
     settings.savedStyles.unshift(style);
     settings.stylePreset = `saved:${style.id}`;
     saveSettings();
+    syncPresetUi({ styleValue: `saved:${style.id}` });
     const select = root.querySelector('#bbcf-draft-style');
     if (select) {
-        select.innerHTML = buildStyleOptionsHtml(settings, `saved:${style.id}`);
         select.value = `saved:${style.id}`;
         select.dispatchEvent(new Event('change', { bubbles: true }));
     }
@@ -1869,9 +2009,9 @@ function saveLayoutFromDraft(root) {
     settings.savedLayouts.unshift(layout);
     settings.layout = `saved:${layout.id}`;
     saveSettings();
+    syncPresetUi({ layoutValue: `saved:${layout.id}` });
     const select = root.querySelector('#bbcf-draft-layout');
     if (select) {
-        select.innerHTML = buildLayoutOptionsHtml(settings, `saved:${layout.id}`);
         select.value = `saved:${layout.id}`;
         select.dispatchEvent(new Event('change', { bubbles: true }));
     }
@@ -2184,8 +2324,10 @@ function openForgeModal(options = {}) {
                     <details class="bbcf-advanced">
                         <summary><i class="fa-solid fa-palette"></i><span>Заготовки стилей и макетов</span></summary>
                         <div class="bbcf-advanced-body bbcf-preset-examples">
-                            ${buildStyleExamplesHtml(settings)}
-                            ${buildLayoutExamplesHtml(settings)}
+                            <div class="bbcf-preset-list" data-bbcf-preset-list>
+                                ${buildStyleExamplesHtml(settings)}
+                                ${buildLayoutExamplesHtml(settings)}
+                            </div>
                             <div class="bbcf-preset-save-grid">
                                 <div class="bbcf-preset-save-card">
                                     <b>Сохранить стиль</b>
@@ -2285,6 +2427,7 @@ function openForgeModal(options = {}) {
     });
     root.querySelector('#bbcf-draft-save-style')?.addEventListener('click', () => saveStyleFromDraft(root));
     root.querySelector('#bbcf-draft-save-layout')?.addEventListener('click', () => saveLayoutFromDraft(root));
+    bindPresetDeleteActions(root);
     root.querySelector('#bbcf-draft-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         await handleGenerateFromModal(root);
@@ -2303,8 +2446,9 @@ function ensureForgeModalForAutomation() {
 
 function closeForgeModal() {
     if (state.generating) {
-        toastr.info('Генерация еще идет. Можно свернуть кузницу и вернуться к чату.', 'Comic Forge');
-        return;
+        const shouldCancel = window.confirm('Генерация уже идет. Закрыть кузницу и отменить ее? Если нужно оставить генерацию в фоне, нажми "Отмена" и сверни окно.');
+        if (!shouldCancel) return;
+        cancelActiveGeneration();
     }
     if (state.modal?.isConnected) saveDraftFromModal(state.modal);
     state.modal?.remove();
@@ -2321,6 +2465,33 @@ function minimizeForgeModal() {
     updateFloatingButton();
 }
 
+function startGenerationSession() {
+    const controller = new AbortController();
+    state.generationAbortController = controller;
+    state.generationCancelRequested = false;
+    state.generationCancelNotified = false;
+    return controller;
+}
+
+function finishGenerationSession(controller) {
+    if (state.generationAbortController !== controller) return;
+    state.generationAbortController = null;
+    state.generationCancelRequested = false;
+    state.generationCancelNotified = false;
+}
+
+function cancelActiveGeneration() {
+    state.generationCancelRequested = true;
+    if (!state.generationCancelNotified) {
+        toastr.warning('Генерация отменена.', 'Comic Forge');
+        state.generationCancelNotified = true;
+    }
+    const controller = state.generationAbortController;
+    if (controller && !controller.signal.aborted) {
+        controller.abort(createCancellationError());
+    }
+}
+
 async function handleGenerateFromModal(root) {
     if (state.generating) return;
     const draft = readDraftFromModal(root);
@@ -2328,6 +2499,7 @@ async function handleGenerateFromModal(root) {
         toastr.warning('Опиши сцену для комикса.', 'Comic Forge');
         return;
     }
+    const controller = startGenerationSession();
     try {
         state.generating = true;
         state.pendingComic = null;
@@ -2338,6 +2510,7 @@ async function handleGenerateFromModal(root) {
         const html = await generateFromDraft(draft, {
             progressRoot: root.querySelector('#bbcf-progress'),
             previewRoot: root.querySelector('#bbcf-preview-content'),
+            signal: controller.signal,
         });
         state.pendingComic = { draft, html: makeShareHtml(html), sent: false };
         attachForgePreviewPanelControls(root);
@@ -2345,9 +2518,18 @@ async function handleGenerateFromModal(root) {
         updateFloatingButton();
         toastr.success('Комикс готов. Проверь превью и отправь его в чат.', 'Comic Forge');
     } catch (error) {
-        console.error('[BB Comic Forge] generation failed', error);
-        toastr.error(error?.message || String(error), 'Comic Forge');
+        if (isAbortError(error) || state.generationCancelRequested) {
+            console.info('[BB Comic Forge] generation cancelled');
+            if (!state.generationCancelNotified && root?.isConnected) {
+                toastr.info('Генерация отменена.', 'Comic Forge');
+                state.generationCancelNotified = true;
+            }
+        } else {
+            console.error('[BB Comic Forge] generation failed', error);
+            toastr.error(error?.message || String(error), 'Comic Forge');
+        }
     } finally {
+        finishGenerationSession(controller);
         state.generating = false;
         updateSendToChatButton(root);
         updateFloatingButton();
@@ -2442,7 +2624,7 @@ function normalizeDraftNumberInput(input) {
     input.value = String(clampNumberInput(input, Number(input.value) || 0));
 }
 
-async function fillDraftFromAi(root, { throwErrors = false } = {}) {
+async function fillDraftFromAi(root, { throwErrors = false, signal = null } = {}) {
     const button = root.querySelector('#bbcf-ai-draft');
     const previousHtml = button?.innerHTML;
     if (button) {
@@ -2450,14 +2632,20 @@ async function fillDraftFromAi(root, { throwErrors = false } = {}) {
         button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Черновик...';
     }
     try {
+        throwIfAborted(signal);
         const prompt = buildDraftPrompt(root);
-        const raw = await runDraftPrompt(prompt);
+        const raw = await runDraftPrompt(prompt, signal);
+        throwIfAborted(signal);
         const draft = extractJsonObject(raw);
         applyAiDraft(root, draft);
         toastr.success('Черновик комикса собран.', 'Comic Forge');
     } catch (error) {
-        console.error('[BB Comic Forge] draft generation failed', error);
-        toastr.error(error?.message || String(error), 'Comic Forge');
+        if (isAbortError(error)) {
+            console.info('[BB Comic Forge] draft generation cancelled');
+        } else {
+            console.error('[BB Comic Forge] draft generation failed', error);
+            toastr.error(error?.message || String(error), 'Comic Forge');
+        }
         if (throwErrors) throw error;
     } finally {
         if (button) {
@@ -2478,14 +2666,17 @@ function buildDraftPrompt(root) {
         .replaceAll('{{panel_count}}', String(panelCount));
 }
 
-async function runDraftPrompt(prompt) {
+async function runDraftPrompt(prompt, signal = null) {
     const settings = getSettings();
-    if (settings.draftConnectionMode === 'openai-chat') return runOpenAiDraftPrompt(prompt, settings);
-    if (settings.draftConnectionMode === 'gemini') return runGeminiDraftPrompt(prompt, settings);
-    return runQuietPrompt(prompt);
+    if (settings.draftConnectionMode === 'openai-chat') return runOpenAiDraftPrompt(prompt, settings, signal);
+    if (settings.draftConnectionMode === 'gemini') return runGeminiDraftPrompt(prompt, settings, signal);
+    throwIfAborted(signal);
+    const result = await runQuietPrompt(prompt);
+    throwIfAborted(signal);
+    return result;
 }
 
-async function runOpenAiDraftPrompt(prompt, settings) {
+async function runOpenAiDraftPrompt(prompt, settings, signal = null) {
     const endpoint = settings.draftEndpoint || settings.endpoint;
     const apiKey = settings.draftApiKey || settings.apiKey;
     const model = settings.draftModel || (settings.draftEndpoint || settings.draftApiKey ? '' : settings.model);
@@ -2508,6 +2699,7 @@ async function runOpenAiDraftPrompt(prompt, settings) {
             method: 'POST',
             headers: draftApiHeaders(apiKey),
             body: JSON.stringify(body),
+            signal,
         });
     } catch (error) {
         if (!/response_format|json_object/i.test(error?.message || '')) throw error;
@@ -2517,6 +2709,7 @@ async function runOpenAiDraftPrompt(prompt, settings) {
             method: 'POST',
             headers: draftApiHeaders(apiKey),
             body: JSON.stringify(fallbackBody),
+            signal,
         });
     }
     const text = extractTextFromChatResult(result);
@@ -2524,7 +2717,7 @@ async function runOpenAiDraftPrompt(prompt, settings) {
     return text;
 }
 
-async function runGeminiDraftPrompt(prompt, settings) {
+async function runGeminiDraftPrompt(prompt, settings, signal = null) {
     const endpoint = settings.draftEndpoint || settings.endpoint;
     const apiKey = settings.draftApiKey || settings.apiKey;
     const model = settings.draftModel || 'gemini-2.5-flash';
@@ -2533,6 +2726,7 @@ async function runGeminiDraftPrompt(prompt, settings) {
     const result = await fetchJson(normalizeGeminiGenerateUrl(endpoint, model), {
         method: 'POST',
         headers: draftGeminiApiHeaders(endpoint, apiKey),
+        signal,
         body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nReturn only valid JSON. No markdown.` }] }],
             generationConfig: {
@@ -2670,11 +2864,12 @@ function applyDefaultPageSettingsToModal(root) {
 }
 
 function valueOf(root, selector) {
-    return String(root.querySelector(selector)?.value || '');
+    return String(root?.querySelector?.(selector)?.value || '');
 }
 
 async function generateFromDraft(draft, ui = {}) {
     validateGenerationSettings();
+    throwIfAborted(ui.signal);
     const settings = getSettings();
     const plans = buildPanelPlans(draft);
     const mode = draft.generationMode || settings.generationMode;
@@ -2682,6 +2877,7 @@ async function generateFromDraft(draft, ui = {}) {
     const html = mode === 'single'
         ? await generateSingleImageComic(draft, plans, ui)
         : await generatePanelComic(draft, plans, ui);
+    throwIfAborted(ui.signal);
     if (ui.previewRoot) {
         ui.previewRoot.innerHTML = html;
         bindComicActions(ui.previewRoot);
@@ -2701,19 +2897,22 @@ async function generatePanelComic(draft, plans, ui = {}) {
     const useSequentialCooldown = cooldown > 0;
     const useCurrentPageContext = previousImageLimit > 0 && (useSequentialCooldown || concurrency <= 1);
     const worker = async (panel, index = 0) => {
+        throwIfAborted(ui.signal);
         if (useSequentialCooldown && index > 0) {
-            await waitWithProgress(cooldown, label => updateProgress(ui.progressRoot, panel.number, 'waiting', label));
+            await waitWithProgress(cooldown, label => updateProgress(ui.progressRoot, panel.number, 'waiting', label), ui.signal);
         }
+        throwIfAborted(ui.signal);
         updateProgress(ui.progressRoot, panel.number, 'running', 'Запрос отправлен');
         const stopTimer = startElapsedProgress(ui.progressRoot, panel.number, 'Генерация');
         try {
             const panelContext = previousImageLimit > 0
                 ? uniqueStrings([...(useCurrentPageContext ? currentContextPaths : []), ...historyContextPaths]).slice(0, previousImageLimit)
                 : [];
-            const dataUrl = await generatePanelImage({ ...panel, previousImagePaths: panelContext }, status => updateProgress(ui.progressRoot, panel.number, 'running', status));
+            const dataUrl = await generatePanelImage({ ...panel, previousImagePaths: panelContext }, status => updateProgress(ui.progressRoot, panel.number, 'running', status), ui.signal);
             stopTimer();
+            throwIfAborted(ui.signal);
             updateProgress(ui.progressRoot, panel.number, 'running', 'Сохранение');
-            const imagePath = await saveImageToFile(dataUrl, panel.number);
+            const imagePath = await saveImageToFile(dataUrl, panel.number, ui.signal);
             if (useCurrentPageContext) {
                 currentContextPaths.push(imagePath);
                 while (currentContextPaths.length > previousImageLimit) currentContextPaths.shift();
@@ -2722,6 +2921,10 @@ async function generatePanelComic(draft, plans, ui = {}) {
             updateProgress(ui.progressRoot, panel.number, 'done', 'Готово');
         } catch (error) {
             stopTimer();
+            if (isAbortError(error)) {
+                updateProgress(ui.progressRoot, panel.number, 'error', 'Отменено');
+                throw error;
+            }
             generated[panel.number - 1] = { ...panel, error: error?.message || String(error) };
             updateProgress(ui.progressRoot, panel.number, 'error', error?.message || 'Ошибка');
         }
@@ -2730,6 +2933,7 @@ async function generatePanelComic(draft, plans, ui = {}) {
         for (const [index, panel] of plans.entries()) await worker(panel, index);
     } else {
         await runQueue(plans, concurrency, panel => worker(panel, panel.number - 1), (panel, error) => {
+            if (isAbortError(error)) return;
             generated[panel.number - 1] = { ...panel, error: error?.message || String(error) };
             updateProgress(ui.progressRoot, panel.number, 'error', error?.message || 'Ошибка');
         });
@@ -2748,14 +2952,20 @@ async function generateSingleImageComic(draft, plans, ui = {}) {
     updateProgress(ui.progressRoot, 1, 'running', 'Запрос одной страницей');
     const stopTimer = startElapsedProgress(ui.progressRoot, 1, 'Генерация');
     try {
-        const dataUrl = await generatePanelImage(panel, status => updateProgress(ui.progressRoot, 1, 'running', status));
+        throwIfAborted(ui.signal);
+        const dataUrl = await generatePanelImage(panel, status => updateProgress(ui.progressRoot, 1, 'running', status), ui.signal);
         stopTimer();
+        throwIfAborted(ui.signal);
         updateProgress(ui.progressRoot, 1, 'running', 'Сохранение');
-        const imagePath = await saveImageToFile(dataUrl, 0);
+        const imagePath = await saveImageToFile(dataUrl, 0, ui.signal);
         updateProgress(ui.progressRoot, 1, 'done', 'Готово');
         return buildSingleComicHtml(draft, { ...panel, imagePath });
     } catch (error) {
         stopTimer();
+        if (isAbortError(error)) {
+            updateProgress(ui.progressRoot, 1, 'error', 'Отменено');
+            throw error;
+        }
         updateProgress(ui.progressRoot, 1, 'error', error?.message || 'Ошибка');
         return buildSingleComicHtml(draft, { ...panel, error: error?.message || String(error) });
     }
@@ -3010,30 +3220,45 @@ function startElapsedProgress(root, panelNumber, prefix) {
     return () => clearInterval(timer);
 }
 
-async function waitWithProgress(ms, onTick) {
+async function waitWithProgress(ms, onTick, signal = null) {
     const total = Math.max(0, Number(ms) || 0);
     if (!total) return;
     const startedAt = Date.now();
     while (Date.now() - startedAt < total) {
+        throwIfAborted(signal);
         const left = Math.ceil((total - (Date.now() - startedAt)) / 1000);
         if (typeof onTick === 'function') onTick(`КД перед запросом: ${left} sec`);
-        await delay(Math.min(1000, total - (Date.now() - startedAt)));
+        await delay(Math.min(1000, total - (Date.now() - startedAt)), signal);
     }
 }
 
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
+function delay(ms, signal = null) {
+    throwIfAborted(signal);
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            signal?.removeEventListener?.('abort', onAbort);
+            resolve();
+        }, Math.max(0, ms));
+        const onAbort = () => {
+            clearTimeout(timer);
+            reject(createCancellationError());
+        };
+        signal?.addEventListener?.('abort', onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+    });
 }
 
-async function generatePanelImage(panel, onStatus = null) {
+async function generatePanelImage(panel, onStatus = null, signal = null) {
     const settings = getSettings();
+    throwIfAborted(signal);
     if (typeof onStatus === 'function') onStatus('Запрос');
-    const references = ['openai-images', 'onlysq-imagen'].includes(settings.apiType) ? [] : await collectReferenceImages(panel.previousImagePaths);
-    if (settings.apiType === 'onlysq-imagen') return generateOnlySqImage(panel);
-    if (settings.apiType === 'openai-images') return generateOpenAiImage(panel);
-    if (settings.apiType === 'openai-chat') return generateOpenAiChatImage(panel, references);
-    if (settings.apiType === 'gemini') return generateGeminiImage(panel, references);
-    if (settings.apiType === 'naistera') return generateNaisteraImage(panel, references);
+    const references = ['openai-images', 'onlysq-imagen'].includes(settings.apiType) ? [] : await collectReferenceImages(panel.previousImagePaths, signal);
+    throwIfAborted(signal);
+    if (settings.apiType === 'onlysq-imagen') return generateOnlySqImage(panel, signal);
+    if (settings.apiType === 'openai-images') return generateOpenAiImage(panel, signal);
+    if (settings.apiType === 'openai-chat') return generateOpenAiChatImage(panel, references, signal);
+    if (settings.apiType === 'gemini') return generateGeminiImage(panel, references, signal);
+    if (settings.apiType === 'naistera') return generateNaisteraImage(panel, references, signal);
     throw new Error(`Unknown API type: ${settings.apiType}`);
 }
 
@@ -3044,15 +3269,16 @@ function validateGenerationSettings() {
     if (settings.apiType !== 'naistera' && !settings.model) throw new Error('Модель не настроена.');
 }
 
-async function collectReferenceImages(previousImagePaths = []) {
+async function collectReferenceImages(previousImagePaths = [], signal = null) {
     const settings = getSettings();
     const refs = settings.references
         .filter(ref => ref.enabled && ref.path)
         .slice(0, 5);
     const loaded = [];
     for (const ref of refs) {
+        throwIfAborted(signal);
         try {
-            const dataUrl = await fetchUrlAsDataUrl(ref.path);
+            const dataUrl = await fetchUrlAsDataUrl(ref.path, signal);
             const parsed = parseImageDataUrl(dataUrl);
             loaded.push({
                 id: ref.id,
@@ -3063,25 +3289,27 @@ async function collectReferenceImages(previousImagePaths = []) {
                 mimeType: `image/${parsed.subtype}`,
             });
         } catch (error) {
+            if (isAbortError(error)) throw error;
             console.warn('[BB Comic Forge] reference skipped', ref.path, error);
         }
     }
     if (settings.wardrobeEnabled && settings.wardrobeSendImages) {
-        loaded.push(...await collectWardrobeReferenceImages());
+        loaded.push(...await collectWardrobeReferenceImages(signal));
     }
-    const previous = await collectPreviousContextReferenceImages(previousImagePaths);
+    const previous = await collectPreviousContextReferenceImages(previousImagePaths, signal);
     const baseLimit = Math.max(0, 5 - previous.length);
     return [...loaded.slice(0, baseLimit), ...previous].slice(0, 5);
 }
 
-async function collectWardrobeReferenceImages() {
+async function collectWardrobeReferenceImages(signal = null) {
     const settings = getSettings();
     if (!settings.wardrobeEnabled || !settings.wardrobeSendImages) return [];
     const outfits = getWardrobeActiveEntries(settings).filter(entry => entry.item.path);
     const loaded = [];
     for (const { owner, item } of outfits) {
+        throwIfAborted(signal);
         try {
-            const dataUrl = await fetchUrlAsDataUrl(item.path);
+            const dataUrl = await fetchUrlAsDataUrl(item.path, signal);
             const parsed = parseImageDataUrl(dataUrl);
             loaded.push({
                 id: `wardrobe_${owner.id}_${item.id}`,
@@ -3093,18 +3321,20 @@ async function collectWardrobeReferenceImages() {
                 kind: 'wardrobe',
             });
         } catch (error) {
+            if (isAbortError(error)) throw error;
             console.warn('[BB Comic Forge] wardrobe reference skipped', item, error);
         }
     }
     return loaded;
 }
 
-async function collectPreviousContextReferenceImages(paths = []) {
+async function collectPreviousContextReferenceImages(paths = [], signal = null) {
     const uniquePaths = uniqueStrings(paths).slice(0, MAX_PREVIOUS_CONTEXT_IMAGES);
     const loaded = [];
     for (const path of uniquePaths) {
+        throwIfAborted(signal);
         try {
-            const dataUrl = await fetchUrlAsDataUrl(path);
+            const dataUrl = await fetchUrlAsDataUrl(path, signal);
             const parsed = parseImageDataUrl(dataUrl);
             loaded.push({
                 id: `previous_${loaded.length + 1}`,
@@ -3116,6 +3346,7 @@ async function collectPreviousContextReferenceImages(paths = []) {
                 kind: 'previous',
             });
         } catch (error) {
+            if (isAbortError(error)) throw error;
             console.warn('[BB Comic Forge] previous context image skipped', path, error);
         }
     }
@@ -3168,11 +3399,12 @@ function buildReferenceInstruction(references) {
     return `${lines.join('\n')}\nUse the reference images only for their own subjects. Do not mix identities, clothing, markings, or facial features between characters.`;
 }
 
-async function generateOnlySqImage(panel) {
+async function generateOnlySqImage(panel, signal = null) {
     const settings = getSettings();
     const result = await fetchJson(normalizeOnlySqImagenEndpoint(settings.endpoint), {
         method: 'POST',
         headers: imageApiHeaders(settings),
+        signal,
         body: JSON.stringify({
             model: settings.model || 'flux',
             prompt: buildFullPrompt(panel),
@@ -3181,10 +3413,10 @@ async function generateOnlySqImage(panel) {
     });
     const found = extractImageFromOnlySqResponse(result);
     if (!found) throw new Error('OnlySQ response did not contain image data.');
-    return /^https?:\/\//i.test(found) ? fetchUrlAsDataUrl(found) : found;
+    return /^https?:\/\//i.test(found) ? fetchUrlAsDataUrl(found, signal) : found;
 }
 
-async function generateOpenAiImage(panel) {
+async function generateOpenAiImage(panel, signal = null) {
     const settings = getSettings();
     const url = `${normalizeOpenAiBase(settings.endpoint)}/images/generations`;
     const body = {
@@ -3199,14 +3431,15 @@ async function generateOpenAiImage(panel) {
         method: 'POST',
         headers: imageApiHeaders(settings),
         body: JSON.stringify(body),
+        signal,
     });
     const image = result?.data?.[0];
     if (image?.b64_json) return `data:image/png;base64,${image.b64_json}`;
-    if (image?.url) return fetchUrlAsDataUrl(image.url);
+    if (image?.url) return fetchUrlAsDataUrl(image.url, signal);
     throw new Error('OpenAI images response did not contain image data.');
 }
 
-async function generateOpenAiChatImage(panel, references = []) {
+async function generateOpenAiChatImage(panel, references = [], signal = null) {
     const settings = getSettings();
     const url = `${normalizeOpenAiBase(settings.endpoint)}/chat/completions`;
     const fullPrompt = `${buildReferenceInstruction(references)}\n\n${buildFullPrompt(panel)}\n\n[aspect_ratio: ${panel.aspectRatio}] [image_size: ${panel.imageSize || settings.imageSize}]`;
@@ -3214,6 +3447,7 @@ async function generateOpenAiChatImage(panel, references = []) {
     const result = await fetchJson(url, {
         method: 'POST',
         headers: imageApiHeaders(settings),
+        signal,
         body: JSON.stringify({
             model: settings.model,
             messages: [{ role: 'user', content: [{ type: 'text', text: fullPrompt }, ...imageParts] }],
@@ -3223,10 +3457,10 @@ async function generateOpenAiChatImage(panel, references = []) {
     });
     const found = extractImageFromChatResponse(result);
     if (!found) throw new Error('OpenAI chat response did not contain image data.');
-    return /^https?:\/\//i.test(found) ? fetchUrlAsDataUrl(found) : found;
+    return /^https?:\/\//i.test(found) ? fetchUrlAsDataUrl(found, signal) : found;
 }
 
-async function generateGeminiImage(panel, references = []) {
+async function generateGeminiImage(panel, references = [], signal = null) {
     const settings = getSettings();
     const url = normalizeGeminiGenerateUrl(settings.endpoint, settings.model);
     const aspectRatio = settings.aspectRatio === 'auto' ? panel.aspectRatio : settings.aspectRatio;
@@ -3245,6 +3479,7 @@ async function generateGeminiImage(panel, references = []) {
     const result = await fetchJson(url, {
         method: 'POST',
         headers: geminiApiHeaders(settings),
+        signal,
         body: JSON.stringify(body),
     });
     const parts = result?.candidates?.[0]?.content?.parts || [];
@@ -3255,13 +3490,14 @@ async function generateGeminiImage(panel, references = []) {
     throw new Error('Gemini response did not contain image data.');
 }
 
-async function generateNaisteraImage(panel, references = []) {
+async function generateNaisteraImage(panel, references = [], signal = null) {
     const settings = getSettings();
     const endpoint = normalizeNaisteraEndpoint(settings.endpoint);
     const aspectRatio = settings.naisteraAspectRatio === 'auto' ? panel.aspectRatio : settings.naisteraAspectRatio;
     const result = await fetchJson(endpoint, {
         method: 'POST',
         headers: imageApiHeaders(settings),
+        signal,
         body: JSON.stringify({
             prompt: `${buildReferenceInstruction(references)}\n\n${buildFullPrompt(panel)}`,
             model: settings.naisteraModel || 'nano banana',
@@ -3355,12 +3591,18 @@ function normalizeNaisteraEndpoint(rawEndpoint) {
     return /\/api\/generate$/i.test(base) ? base : `${base}/api/generate`;
 }
 
-async function fetchJson(url, options) {
+async function fetchJson(url, options = {}) {
     const settings = getSettings();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), settings.timeoutMs);
+    const timeoutController = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+        timedOut = true;
+        timeoutController.abort();
+    }, settings.timeoutMs);
+    const { signal, cleanup } = combineAbortSignals(options.signal, timeoutController.signal);
+    const { signal: _signal, ...fetchOptions } = options;
     try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        const response = await fetch(url, { ...fetchOptions, signal });
         const text = await response.text();
         if (!response.ok) {
             throw new Error(formatApiError(response.status, text, url));
@@ -3370,9 +3612,60 @@ async function fetchJson(url, options) {
         } catch (error) {
             throw new Error(`API returned invalid JSON: ${stripHtmlForError(text).slice(0, 220)}`);
         }
+    } catch (error) {
+        if (isAbortError(error)) {
+            if (timedOut && !options.signal?.aborted) throw new Error('API request timed out.');
+            throw createCancellationError();
+        }
+        throw error;
     } finally {
         clearTimeout(timeout);
+        cleanup();
     }
+}
+
+function combineAbortSignals(...signals) {
+    const active = signals.filter(Boolean);
+    if (!active.length) return { signal: undefined, cleanup: () => {} };
+    if (active.length === 1) return { signal: active[0], cleanup: () => {} };
+    const controller = new AbortController();
+    const listeners = [];
+    const abortFrom = source => {
+        if (controller.signal.aborted) return;
+        try {
+            controller.abort(source.reason);
+        } catch (error) {
+            controller.abort();
+        }
+    };
+    for (const source of active) {
+        if (source.aborted) {
+            abortFrom(source);
+            break;
+        }
+        const listener = () => abortFrom(source);
+        source.addEventListener('abort', listener, { once: true });
+        listeners.push([source, listener]);
+    }
+    return {
+        signal: controller.signal,
+        cleanup: () => listeners.forEach(([source, listener]) => source.removeEventListener('abort', listener)),
+    };
+}
+
+function createCancellationError(message = 'Генерация отменена.') {
+    const error = new Error(message);
+    error.name = 'AbortError';
+    error.bbcfCancelled = true;
+    return error;
+}
+
+function isAbortError(error) {
+    return Boolean(error?.bbcfCancelled || error?.name === 'AbortError');
+}
+
+function throwIfAborted(signal) {
+    if (signal?.aborted) throw createCancellationError();
 }
 
 function formatApiError(status, body, url = '') {
@@ -3479,10 +3772,12 @@ function extractTextFromGeminiResult(result) {
     return text || result?.text || '';
 }
 
-async function fetchUrlAsDataUrl(url) {
-    const response = await fetch(url);
+async function fetchUrlAsDataUrl(url, signal = null) {
+    throwIfAborted(signal);
+    const response = await fetch(url, { signal });
     if (!response.ok) throw new Error(`Image URL fetch failed: ${response.status}`);
     const blob = await response.blob();
+    throwIfAborted(signal);
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result);
@@ -3519,18 +3814,21 @@ async function convertDataUrlToPng(dataUrl) {
     });
 }
 
-async function saveImageToFile(dataUrl, panelNumber = 0) {
+async function saveImageToFile(dataUrl, panelNumber = 0, signal = null) {
+    throwIfAborted(signal);
     const context = SillyTavern.getContext();
     let parsed = parseImageDataUrl(dataUrl);
     if (!UPLOAD_ALLOWED_FORMATS.has(parsed.normalizedFormat)) {
         parsed = parseImageDataUrl(await convertDataUrlToPng(dataUrl));
     }
+    throwIfAborted(signal);
     const characterName = getCurrentCharacterName() || 'comic_forge';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `bbcf_p${panelNumber || 0}_${timestamp}`;
     const response = await fetch('/api/images/upload', {
         method: 'POST',
         headers: context.getRequestHeaders(),
+        signal,
         body: JSON.stringify({
             image: parsed.base64Data,
             format: parsed.normalizedFormat,
@@ -4156,6 +4454,7 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
         toastr.info('В режиме одной картинки лучше перегенерировать страницу целиком.', 'Comic Forge');
         return;
     }
+    const controller = startGenerationSession();
     try {
         state.generating = true;
         updateFloatingButton();
@@ -4170,10 +4469,11 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
         const stopTimer = startElapsedProgress(root.querySelector('#bbcf-progress'), panelNumber, 'Перегенерация');
         let imagePath = '';
         try {
-            const dataUrl = await generatePanelImage(plan, status => updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'running', status));
+            const dataUrl = await generatePanelImage(plan, status => updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'running', status), controller.signal);
             stopTimer();
+            throwIfAborted(controller.signal);
             updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'running', 'Сохранение');
-            imagePath = await saveImageToFile(dataUrl, panelNumber);
+            imagePath = await saveImageToFile(dataUrl, panelNumber, controller.signal);
             updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'done', 'Готово');
         } catch (error) {
             stopTimer();
@@ -4192,9 +4492,18 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
         updateFloatingButton();
         toastr.success(`Панель ${panelNumber} обновлена в превью.`, 'Comic Forge');
     } catch (error) {
-        console.error('[BB Comic Forge] preview panel regeneration failed', error);
-        toastr.error(error?.message || String(error), 'Comic Forge');
+        if (isAbortError(error) || state.generationCancelRequested) {
+            console.info('[BB Comic Forge] preview panel regeneration cancelled');
+            if (!state.generationCancelNotified && root?.isConnected) {
+                toastr.info('Генерация отменена.', 'Comic Forge');
+                state.generationCancelNotified = true;
+            }
+        } else {
+            console.error('[BB Comic Forge] preview panel regeneration failed', error);
+            toastr.error(error?.message || String(error), 'Comic Forge');
+        }
     } finally {
+        finishGenerationSession(controller);
         state.generating = false;
         button?.classList.remove('is-busy');
         updateSendToChatButton(root);

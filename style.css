@@ -1011,6 +1011,11 @@
     margin-top: 10px;
 }
 
+.bbcf-preset-list {
+    display: grid;
+    gap: 12px;
+}
+
 .bbcf-preset-example-group {
     display: grid;
     gap: 8px;
@@ -1040,6 +1045,31 @@
     font-weight: 700;
 }
 
+.bbcf-preset-example-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+}
+
+.bbcf-preset-example-top span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bbcf-danger {
+    border-color: rgba(255, 122, 182, 0.38) !important;
+    color: #ffc7dd !important;
+    background: rgba(255, 122, 182, 0.08) !important;
+}
+
+.bbcf-danger:hover {
+    border-color: rgba(255, 122, 182, 0.62) !important;
+    background: rgba(255, 122, 182, 0.14) !important;
+}
+
 .bbcf-preset-example p,
 .bbcf-layout-example p {
     margin: 0;
@@ -1049,7 +1079,7 @@
     overflow-wrap: anywhere;
 }
 
-.bbcf-layout-example div {
+.bbcf-layout-example .bbcf-layout-pattern {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
