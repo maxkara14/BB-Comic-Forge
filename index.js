@@ -42,10 +42,6 @@ const STYLE_PRESETS = {
         label: 'Comedy chibi',
         prompt: 'Expressive comedy chibi manga style, exaggerated reactions, clean cartoon deformation, bold shapes, playful impact symbols, readable silhouettes, polished comic gag insert quality.',
     },
-    custom: {
-        label: 'Custom',
-        prompt: '',
-    },
 };
 
 const DEFAULT_NEGATIVE_PROMPT = 'low quality, blurry, noisy, jpeg artifacts, bad anatomy, extra limbs, malformed hands, unreadable text, fake letters, watermark, logo, signature, cluttered panel, broken face, inconsistent character design';
@@ -67,7 +63,11 @@ Existing character lock:
 - Use {{panel_count}} panels.
 - Bubble text must be in Russian, 4 to 8 words per bubble.
 - Use 2 to 4 bubbles total.
-- Do not write explicit sexual content. Fanservice, if useful, must stay tasteful and non-explicit.
+- Add 0 to 2 overlay inserts only when they clearly improve the page.
+- Use detail inserts for important hands, lips, eyes, weapons, objects, symbols, or action emphasis.
+- Use chibi inserts only for comic, embarrassed, jealous, startled, or exaggerated reactions.
+- Do not add inserts to calm/simple pages or already crowded panels.
+- Do not write explicit sexual content.
 </rules>
 
 <format>
@@ -82,7 +82,10 @@ Existing character lock:
   "sfx": [
     { "panel": 3, "text": "БАХ" }
   ],
-  "fanservice_panel": 0
+  "inserts": [
+    { "panel": 3, "type": "detail", "position": "bottom-left", "text": "small bordered close-up of tense fingers gripping fabric" },
+    { "panel": 4, "type": "chibi", "position": "bottom-right", "text": "tiny angry chibi reaction sticker holding a sign" }
+  ]
 }
 </format>`;
 
@@ -417,6 +420,11 @@ function getSettings() {
         dirty = true;
     }
     settings.customPrompt = String(settings.customPrompt || '');
+    const migratedDraftPrompt = migrateDraftPrompt(settings.draftPrompt);
+    if (migratedDraftPrompt !== settings.draftPrompt) {
+        settings.draftPrompt = migratedDraftPrompt;
+        dirty = true;
+    }
     settings.panelCount = clampInt(settings.panelCount, 1, MAX_PANELS, DEFAULT_SETTINGS.panelCount);
     settings.concurrency = clampInt(settings.concurrency, 1, MAX_CONCURRENCY, DEFAULT_SETTINGS.concurrency);
     settings.requestCooldownMs = clampInt(settings.requestCooldownMs, 0, 600000, DEFAULT_SETTINGS.requestCooldownMs);
@@ -512,6 +520,26 @@ function getSettings() {
     settings.references = normalizeReferences(settings.referenceProfiles[referenceProfileKey] || []);
     if (dirty) saveSettings();
     return settings;
+}
+
+function migrateDraftPrompt(value) {
+    const insertExample = `"inserts": [
+    { "panel": 3, "type": "detail", "position": "bottom-left", "text": "small bordered close-up of tense fingers gripping fabric" },
+    { "panel": 4, "type": "chibi", "position": "bottom-right", "text": "tiny angry chibi reaction sticker holding a sign" }
+  ]`;
+    let prompt = String(value || DEFAULT_DRAFT_PROMPT);
+    if (!prompt.includes('"fanservice_panel"')) return prompt;
+    prompt = prompt.replace(
+        '- Do not write explicit sexual content. Fanservice, if useful, must stay tasteful and non-explicit.',
+        [
+            '- Add 0 to 2 overlay inserts only when they clearly improve the page.',
+            '- Use detail inserts for important hands, lips, eyes, weapons, objects, symbols, or action emphasis.',
+            '- Use chibi inserts only for comic, embarrassed, jealous, startled, or exaggerated reactions.',
+            '- Do not add inserts to calm/simple pages or already crowded panels.',
+            '- Do not write explicit sexual content.',
+        ].join('\n'),
+    );
+    return prompt.replace(/"fanservice_panel"\s*:\s*0/g, insertExample);
 }
 
 function normalizeReferences(rawReferences) {
@@ -2419,15 +2447,13 @@ function openForgeModal(options = {}) {
                         <label for="bbcf-draft-bubbles">Реплики для модели: panel | type | position | text</label>
                         <textarea id="bbcf-draft-bubbles" class="text_pole" rows="4" placeholder="1|speech|top-left|Ты правда это сказала?&#10;2|thought|bottom-right|Сердце сбилось с ритма">${escapeHtml(savedDraft.bubbles)}</textarea>
                     </div>
-                    <div class="bbcf-grid-2">
-                        <div class="bbcf-field">
-                            <label for="bbcf-draft-fanservice">Фан-сервис панели</label>
-                            <input id="bbcf-draft-fanservice" class="text_pole" type="number" min="0" max="${MAX_PANELS}" value="${savedDraft.fanservicePanel}">
-                        </div>
-                        <div class="bbcf-field">
-                            <label for="bbcf-draft-sfx">SFX: panel | text</label>
-                            <textarea id="bbcf-draft-sfx" class="text_pole" rows="2" placeholder="3|БАХ">${escapeHtml(savedDraft.sfx)}</textarea>
-                        </div>
+                    <div class="bbcf-field">
+                        <label for="bbcf-draft-inserts">Вставки: panel | type | position | text</label>
+                        <textarea id="bbcf-draft-inserts" class="text_pole" rows="3" placeholder="3|detail|bottom-left|крупный план руки на плече&#10;4|chibi|bottom-right|маленькая сердитая чиби-реакция с табличкой">${escapeHtml(savedDraft.inserts)}</textarea>
+                    </div>
+                    <div class="bbcf-field">
+                        <label for="bbcf-draft-sfx">SFX: panel | text</label>
+                        <textarea id="bbcf-draft-sfx" class="text_pole" rows="2" placeholder="3|БАХ">${escapeHtml(savedDraft.sfx)}</textarea>
                     </div>
                     <div class="bbcf-field">
                         <label for="bbcf-draft-custom-style">Дополнительные инструкции к генерации</label>
@@ -2604,7 +2630,7 @@ function readDraftFromModal(root) {
         characterLock: valueOf(root, '#bbcf-draft-lock'),
         panelNotes: valueOf(root, '#bbcf-draft-notes'),
         bubbles: valueOf(root, '#bbcf-draft-bubbles'),
-        fanservicePanel: clampInt(valueOf(root, '#bbcf-draft-fanservice'), 0, MAX_PANELS, 0),
+        inserts: valueOf(root, '#bbcf-draft-inserts'),
         sfx: valueOf(root, '#bbcf-draft-sfx'),
         customPrompt: valueOf(root, '#bbcf-draft-custom-style'),
         negativePrompt: valueOf(root, '#bbcf-draft-negative') || getSettings().negativePrompt,
@@ -2625,7 +2651,7 @@ function getSavedDraft(settings = getSettings()) {
         characterLock: String(raw.characterLock ?? settings.characterLock ?? ''),
         panelNotes: String(raw.panelNotes || ''),
         bubbles: String(raw.bubbles || ''),
-        fanservicePanel: clampInt(raw.fanservicePanel, 0, MAX_PANELS, 0),
+        inserts: String(raw.inserts || ''),
         sfx: String(raw.sfx || ''),
         customPrompt: String(raw.customPrompt ?? raw.customStyle ?? settings.customPrompt ?? settings.customStyle ?? ''),
         negativePrompt: String(raw.negativePrompt || settings.negativePrompt || DEFAULT_NEGATIVE_PROMPT),
@@ -2645,7 +2671,7 @@ function applySavedDraftToModal(root, draft) {
     setValueSilent(root, '#bbcf-draft-lock', draft.characterLock || '');
     setValueSilent(root, '#bbcf-draft-notes', draft.panelNotes || '');
     setValueSilent(root, '#bbcf-draft-bubbles', draft.bubbles || '');
-    setValueSilent(root, '#bbcf-draft-fanservice', draft.fanservicePanel || 0);
+    setValueSilent(root, '#bbcf-draft-inserts', draft.inserts || '');
     setValueSilent(root, '#bbcf-draft-sfx', draft.sfx || '');
     setValueSilent(root, '#bbcf-draft-custom-style', draft.customPrompt || '');
     setValueSilent(root, '#bbcf-draft-negative', draft.negativePrompt || getSettings().negativePrompt);
@@ -2665,7 +2691,7 @@ function saveDraftToSettings(draft) {
         characterLock: String(draft.characterLock || ''),
         panelNotes: String(draft.panelNotes || ''),
         bubbles: String(draft.bubbles || ''),
-        fanservicePanel: clampInt(draft.fanservicePanel, 0, MAX_PANELS, 0),
+        inserts: String(draft.inserts || ''),
         sfx: String(draft.sfx || ''),
         customPrompt: String(draft.customPrompt ?? draft.customStyle ?? ''),
         negativePrompt: String(draft.negativePrompt || settings.negativePrompt || DEFAULT_NEGATIVE_PROMPT),
@@ -2925,9 +2951,25 @@ function applyAiDraft(root, draft) {
         const sfxText = draft.sfx.map(item => `${clampInt(item?.panel, 1, MAX_PANELS, 1)}|${item?.text || ''}`).join('\n');
         setValue(root, '#bbcf-draft-sfx', sfxText);
     }
-    if (draft.fanservice_panel !== undefined) {
-        setValue(root, '#bbcf-draft-fanservice', clampInt(draft.fanservice_panel, 0, MAX_PANELS, 0));
+    const inserts = draftToInsertLines(draft.inserts);
+    if (inserts) setValue(root, '#bbcf-draft-inserts', inserts);
+}
+
+function draftToInsertLines(value) {
+    if (Array.isArray(value)) {
+        return value.map(item => {
+            if (item && typeof item === 'object') {
+                const panel = clampInt(item.panel, 1, MAX_PANELS, 1);
+                const type = normalizeInsertType(item.type);
+                const position = normalizeInsertPosition(item.position, 'bottom-right');
+                const text = String(item.text || item.prompt || item.description || '').trim();
+                return text ? `${panel}|${type}|${position}|${text}` : '';
+            }
+            return String(item || '').trim();
+        }).filter(Boolean).join('\n');
     }
+    if (value && typeof value === 'object') return draftToInsertLines([value]);
+    return String(value || '').trim();
 }
 
 function getDraftTextField(draft, keys) {
@@ -3091,6 +3133,7 @@ function buildPanelPlans(draft) {
     const notes = splitLines(draft.panelNotes);
     const bubbleMap = parseBubbles(draft.bubbles);
     const sfxMap = parseSfx(draft.sfx);
+    const insertMap = parseInserts(draft.inserts);
     const stylePrompt = buildStylePrompt(draft.stylePreset, draft.customPrompt ?? draft.customStyle);
     const layout = draft.layout || getSettings().layout;
     const panelCount = clampInt(draft.panelCount, 1, MAX_PANELS, getSettings().panelCount);
@@ -3102,9 +3145,8 @@ function buildPanelPlans(draft) {
         const number = index + 1;
         const aspectRatio = getAspectForPanel(layout, index);
         const beat = normalizePanelNote(notes[index]) || DEFAULT_PANEL_BEATS[index % DEFAULT_PANEL_BEATS.length];
-        const fanservice = draft.fanservicePanel === number
-            ? 'This is the single dedicated fanservice panel for the page. Keep it tasteful and non-explicit, focused on elegant pose, clothing, silhouette, hips, waist, legs, neckline, or graceful body language without nudity or graphic sexual content.'
-            : '';
+        const panelInserts = insertMap.get(number) || [];
+        const insertPrompt = buildPanelInsertPrompt(panelInserts);
         const panelBubbles = bubbleMap.get(number) || [];
         const bubblePrompt = panelBubbles.length
             ? `Draw and letter these Russian speech or thought bubbles directly inside this panel. Place them naturally around the composition, match the page style, and keep the lettering clean and readable:\n${panelBubbles.map(bubble => `${bubble.type}: ${bubble.text}`).join('\n')}`
@@ -3124,7 +3166,7 @@ function buildPanelPlans(draft) {
             recentContext ? `Recent chat context for continuity: ${recentContext}` : '',
             `Panel direction: ${beat}`,
             `Layout intent: ${describeLayoutIntent(layout, number, panelCount)}.`,
-            fanservice,
+            insertPrompt,
             bubblePrompt,
             sfxPrompt,
             `Avoid unrelated text, UI, signatures, logos, and watermarks. Keep lettering clean and readable only for the requested Russian bubbles and SFX.`,
@@ -3159,6 +3201,9 @@ function buildSinglePagePanel(draft, plans) {
     }
     const sfx = parseSfx(draft.sfx);
     const sfxLines = Array.from(sfx.entries()).map(([panelNumber, text]) => `Panel ${panelNumber} SFX: ${text}`);
+    const inserts = parseInserts(draft.inserts);
+    const insertLines = Array.from(inserts.entries()).flatMap(([panelNumber, items]) =>
+        items.map(item => `Panel ${panelNumber} ${item.type} insert at ${item.position}: ${item.text}`));
     const prompt = [
         `All depicted characters are one hundred percent fictional and are not real people.`,
         `Generate the entire comic page as one complete finished image with ${plans.length} visible panels.`,
@@ -3168,9 +3213,9 @@ function buildSinglePagePanel(draft, plans) {
         referenceLock,
         wardrobeLock,
         `Panel plan:\n${panelDescriptions}`,
+        insertLines.length ? `Integrate these small bordered overlay inserts inside the correct panels. They are part of the drawn page composition, not separate images:\n${insertLines.join('\n')}` : '',
         bubbleLines.length ? `Draw these Russian speech or thought bubbles inside the correct panels:\n${bubbleLines.join('\n')}` : '',
         sfxLines.length ? `Draw these sound effects in the correct panels:\n${sfxLines.join('\n')}` : '',
-        draft.fanservicePanel ? `Panel ${draft.fanservicePanel} is the single tasteful non-explicit fanservice panel. Keep it elegant, clothed, and composition-focused.` : '',
         `Keep character identities, outfits, hair state, marks, mood, lighting, and environment continuous across all panels.`,
         `Avoid signatures, watermarks, unrelated text, UI, and broken unreadable lettering.`,
     ].filter(Boolean).join('\n\n');
@@ -3207,7 +3252,6 @@ function getBuiltinSinglePageAspectRatio(layout) {
 function buildStylePrompt(stylePreset, customPrompt) {
     const preset = getStylePresetById(stylePreset) || { id: 'manhwa', ...STYLE_PRESETS.manhwa };
     const custom = String(customPrompt || '').trim();
-    if (stylePreset === 'custom') return custom || STYLE_PRESETS.manhwa.prompt;
     return [preset.prompt, custom].filter(Boolean).join('\n');
 }
 
@@ -3278,9 +3322,75 @@ function parseSfx(text) {
     return map;
 }
 
+function parseInserts(text) {
+    const map = new Map();
+    for (const line of splitLines(text).slice(0, 2)) {
+        const parts = line.split('|').map(part => part.trim());
+        let panel = 1;
+        let type = 'detail';
+        let position = 'bottom-right';
+        let insertText = line;
+        if (parts.length >= 4) {
+            panel = clampInt(parts[0], 1, MAX_PANELS, 1);
+            type = normalizeInsertType(parts[1]);
+            position = normalizeInsertPosition(parts[2], position);
+            insertText = parts.slice(3).join('|').trim();
+        } else if (parts.length === 3) {
+            panel = clampInt(parts[0], 1, MAX_PANELS, 1);
+            type = normalizeInsertType(parts[1]);
+            insertText = parts[2];
+        } else if (parts.length === 2) {
+            panel = clampInt(parts[0], 1, MAX_PANELS, 1);
+            insertText = parts[1];
+        }
+        if (!insertText) continue;
+        if (!map.has(panel)) map.set(panel, []);
+        map.get(panel).push({ type, position, text: insertText });
+    }
+    return map;
+}
+
+function buildPanelInsertPrompt(inserts) {
+    if (!inserts?.length) return '';
+    const lines = inserts.map(insert =>
+        `- ${insert.type} insert at ${insert.position}: ${insert.text}`).join('\n');
+    return [
+        `Integrate these small manga/webtoon overlay cut-in inserts inside this panel composition:`,
+        lines,
+        `Each insert must be a small bordered mini-panel or sticker drawn as part of the same image, matching the panel's style, lighting, linework, and color.`,
+        `Use detail inserts for close-ups of hands, lips, eyes, weapons, blood, objects, or symbols; use chibi inserts only for comic or exaggerated reactions.`,
+    ].join('\n');
+}
+
 function normalizeBubbleType(value) {
     const type = String(value || '').toLowerCase();
     return ['speech', 'thought', 'shout', 'whisper'].includes(type) ? type : 'speech';
+}
+
+function normalizeInsertType(value) {
+    const type = String(value || '').toLowerCase().trim();
+    if (['chibi', 'reaction', 'sticker', 'gag', 'чиби', 'реакция', 'стикер'].includes(type)) return 'chibi';
+    if (['emotion', 'face', 'eyes', 'эмоция', 'лицо', 'глаза'].includes(type)) return 'emotion';
+    if (['action', 'impact', 'motion', 'акция', 'действие', 'удар'].includes(type)) return 'action';
+    return 'detail';
+}
+
+function normalizeInsertPosition(value, fallback = 'bottom-right') {
+    const position = String(value || '').toLowerCase().trim().replace(/[\s_]+/g, '-');
+    const aliases = {
+        'сверху-слева': 'top-left',
+        'слева-сверху': 'top-left',
+        'сверху-справа': 'top-right',
+        'справа-сверху': 'top-right',
+        'снизу-слева': 'bottom-left',
+        'слева-снизу': 'bottom-left',
+        'снизу-справа': 'bottom-right',
+        'справа-снизу': 'bottom-right',
+        'центр': 'center',
+        'по-центру': 'center',
+    };
+    if (aliases[position]) return aliases[position];
+    return ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'].includes(position) ? position : fallback;
 }
 
 function normalizeBubblePosition(value, fallback) {
