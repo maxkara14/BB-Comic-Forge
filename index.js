@@ -97,7 +97,7 @@ Current character card:
 </format>`;
 
 const DEFAULT_SETTINGS = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     enabled: true,
     showFab: true,
     apiType: 'onlysq-imagen',
@@ -139,6 +139,7 @@ const DEFAULT_SETTINGS = {
     references: [],
     referenceProfiles: {},
     activeReferenceProfileKey: '',
+    referencesMigratedToProfiles: false,
     wardrobeEnabled: true,
     wardrobeSendDescription: true,
     wardrobeSendImages: true,
@@ -147,6 +148,7 @@ const DEFAULT_SETTINGS = {
     wardrobeAssignments: {},
     wardrobeProfiles: {},
     activeWardrobeProfileKey: '',
+    wardrobeMigratedToProfiles: false,
     characterLockProfiles: {},
     activeCharacterLockProfileKey: '',
     savedDraftProfiles: {},
@@ -473,10 +475,15 @@ function getSettings() {
         dirty = true;
     }
     const wardrobeProfileKey = getWardrobeProfileKey();
+    const unscopedWardrobeProfileKey = 'legacy:unscoped';
     const legacyWardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
-    const hasLegacyWardrobeAssignments = !settings.activeWardrobeProfileKey && hasAnyWardrobeAssignment(legacyWardrobeAssignments);
-    if (!settings.wardrobeProfiles[wardrobeProfileKey] && hasLegacyWardrobeAssignments) {
-        settings.wardrobeProfiles[wardrobeProfileKey] = structuredClone(legacyWardrobeAssignments);
+    const hasLegacyWardrobeAssignments = hasAnyWardrobeAssignment(legacyWardrobeAssignments);
+    if (!settings.wardrobeMigratedToProfiles && hasLegacyWardrobeAssignments && !settings.wardrobeProfiles[unscopedWardrobeProfileKey]) {
+        settings.wardrobeProfiles[unscopedWardrobeProfileKey] = structuredClone(legacyWardrobeAssignments);
+        dirty = true;
+    }
+    if (!settings.wardrobeMigratedToProfiles) {
+        settings.wardrobeMigratedToProfiles = true;
         dirty = true;
     }
     if (settings.activeWardrobeProfileKey !== wardrobeProfileKey) {
@@ -511,13 +518,18 @@ function getSettings() {
     }
     const referenceProfileKey = getReferenceProfileKey();
     const legacyReferenceProfileKey = getLegacyReferenceProfileKey();
+    const unscopedReferenceProfileKey = 'legacy:unscoped';
     const existingReferences = normalizeReferences(settings.references);
-    const hasLegacyReferences = !settings.activeReferenceProfileKey && existingReferences.some(ref => ref.path || ref.name || ref.description);
+    const hasLegacyReferences = existingReferences.some(ref => ref.path || ref.name || ref.description);
     if (!settings.referenceProfiles[referenceProfileKey] && settings.referenceProfiles[legacyReferenceProfileKey]) {
         settings.referenceProfiles[referenceProfileKey] = structuredClone(normalizeReferences(settings.referenceProfiles[legacyReferenceProfileKey]));
         dirty = true;
-    } else if (!settings.referenceProfiles[referenceProfileKey] && hasLegacyReferences) {
-        settings.referenceProfiles[referenceProfileKey] = structuredClone(existingReferences);
+    } else if (!settings.referencesMigratedToProfiles && hasLegacyReferences && !settings.referenceProfiles[unscopedReferenceProfileKey]) {
+        settings.referenceProfiles[unscopedReferenceProfileKey] = structuredClone(existingReferences);
+        dirty = true;
+    }
+    if (!settings.referencesMigratedToProfiles) {
+        settings.referencesMigratedToProfiles = true;
         dirty = true;
     }
     if (settings.activeReferenceProfileKey !== referenceProfileKey) {
@@ -4478,10 +4490,12 @@ async function insertComicIntoChat(html, mode = 'new', targetMessageId = null) {
 
 function rememberComic(draft, html, messageId = null) {
     const settings = getSettings();
+    const profileKey = getScopedProfileKey();
     const cleanHtml = makeShareHtml(html);
     const imagePaths = extractImagePathsFromHtml(cleanHtml);
     const record = {
         id: makeId('bbcf-comic'),
+        profileKey,
         title: String(draft.title || 'Comic page'),
         createdAt: new Date().toISOString(),
         mode: draft.generationMode || settings.generationMode,
@@ -4530,9 +4544,8 @@ function getCommonImageFolder(paths) {
 function getRecentComicImagePaths(count = getSettings().previousImageCount) {
     const max = clampInt(count, 0, MAX_PREVIOUS_CONTEXT_IMAGES, 0);
     if (!max) return [];
-    const settings = getSettings();
     const paths = [];
-    for (const record of settings.comicHistory || []) {
+    for (const record of getScopedComicHistory()) {
         const recordPaths = Array.isArray(record.imagePaths) && record.imagePaths.length
             ? record.imagePaths
             : extractImagePathsFromHtml(record.html || '');
@@ -4833,13 +4846,14 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
 }
 
 function getActiveComicRecord() {
-    return state.lastComic || getSettings().comicHistory?.[0] || null;
+    if (isComicRecordForCurrentScope(state.lastComic)) return state.lastComic;
+    return getScopedComicHistory()[0] || null;
 }
 
 function renderComicHistory(root) {
     const panel = root.querySelector('#bbcf-history-panel');
     if (!panel) return;
-    const history = getSettings().comicHistory || [];
+    const history = getScopedComicHistory();
     if (!history.length) {
         panel.innerHTML = '<p class="bbcf-hint">История пуста.</p>';
         return;
@@ -4864,7 +4878,8 @@ function renderComicHistory(root) {
     `).join('')}`;
     panel.querySelector('[data-bbcf-history-clear]')?.addEventListener('click', () => {
         const settings = getSettings();
-        settings.comicHistory = [];
+        const profileKey = getScopedProfileKey();
+        settings.comicHistory = (settings.comicHistory || []).filter(record => record?.profileKey !== profileKey);
         state.lastComic = null;
         saveSettings();
         renderComicHistory(root);
@@ -4893,6 +4908,14 @@ function renderComicHistory(root) {
             toastr.success('Запись удалена из истории.', 'Comic Forge');
         });
     });
+}
+
+function getScopedComicHistory(settings = getSettings()) {
+    return (settings.comicHistory || []).filter(isComicRecordForCurrentScope);
+}
+
+function isComicRecordForCurrentScope(record) {
+    return Boolean(record && record.profileKey && record.profileKey === getScopedProfileKey());
 }
 
 function formatComicDate(value) {
