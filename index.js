@@ -137,6 +137,10 @@ const DEFAULT_SETTINGS = {
     wardrobeAssignments: {},
     wardrobeProfiles: {},
     activeWardrobeProfileKey: '',
+    characterLockProfiles: {},
+    activeCharacterLockProfileKey: '',
+    savedDraftProfiles: {},
+    activeSavedDraftProfileKey: '',
     savedDraft: null,
     comicHistory: [],
 };
@@ -257,7 +261,17 @@ function handleContextChanged() {
     getSettings();
     state.lastAutoTriggerKey = null;
     refreshSettingsUi();
+    refreshModalForCurrentContext();
     if (state.wardrobeModal?.isConnected) renderWardrobeModal();
+}
+
+function refreshModalForCurrentContext() {
+    if (!state.modal?.isConnected || state.generating) return;
+    applySavedDraftToModal(state.modal, getSavedDraft());
+    state.pendingComic = null;
+    const preview = state.modal.querySelector('#bbcf-preview-content');
+    if (preview) preview.innerHTML = '<p class="bbcf-hint">Готовая страница появится здесь.</p>';
+    updateSendToChatButton(state.modal);
 }
 
 async function runAutoComicAfterMessage(rawMessageId, renderType = '') {
@@ -429,6 +443,16 @@ function getSettings() {
     settings.wardrobeItems = normalizeWardrobeItems(settings.wardrobeItems);
     settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
     settings.wardrobe = [];
+    if (!settings.characterLockProfiles || typeof settings.characterLockProfiles !== 'object' || Array.isArray(settings.characterLockProfiles)) {
+        settings.characterLockProfiles = {};
+        dirty = true;
+    }
+    const characterLockProfileKey = getCharacterLockProfileKey();
+    if (settings.activeCharacterLockProfileKey !== characterLockProfileKey) {
+        settings.activeCharacterLockProfileKey = characterLockProfileKey;
+        dirty = true;
+    }
+    settings.characterLock = String(settings.characterLockProfiles[characterLockProfileKey] || '');
     if (!settings.wardrobeProfiles || typeof settings.wardrobeProfiles !== 'object' || Array.isArray(settings.wardrobeProfiles)) {
         settings.wardrobeProfiles = {};
         dirty = true;
@@ -449,6 +473,16 @@ function getSettings() {
         settings.savedDraft = null;
         dirty = true;
     }
+    if (!settings.savedDraftProfiles || typeof settings.savedDraftProfiles !== 'object' || Array.isArray(settings.savedDraftProfiles)) {
+        settings.savedDraftProfiles = {};
+        dirty = true;
+    }
+    const savedDraftProfileKey = getSavedDraftProfileKey();
+    if (settings.activeSavedDraftProfileKey !== savedDraftProfileKey) {
+        settings.activeSavedDraftProfileKey = savedDraftProfileKey;
+        dirty = true;
+    }
+    settings.savedDraft = normalizeSavedDraft(settings.savedDraftProfiles[savedDraftProfileKey]);
     if (!Array.isArray(settings.comicHistory)) {
         settings.comicHistory = [];
         dirty = true;
@@ -529,6 +563,12 @@ function normalizeAspectPattern(value) {
     return pattern.length ? pattern.slice(0, MAX_PANELS) : ['2:3', '1:1', '16:9', '3:4'];
 }
 
+function normalizeSavedDraft(rawDraft) {
+    return rawDraft && typeof rawDraft === 'object' && !Array.isArray(rawDraft)
+        ? structuredClone(rawDraft)
+        : null;
+}
+
 function normalizeWardrobeItems(rawItems) {
     const items = Array.isArray(rawItems) ? rawItems : [];
     return items
@@ -580,6 +620,18 @@ function persistWardrobeAssignments(settings) {
     settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
     settings.wardrobeProfiles[profileKey] = structuredClone(settings.wardrobeAssignments);
     settings.activeWardrobeProfileKey = profileKey;
+}
+
+function persistCharacterLockProfile(settings) {
+    if (!settings) return;
+    const profileKey = getCharacterLockProfileKey();
+    if (!settings.characterLockProfiles || typeof settings.characterLockProfiles !== 'object' || Array.isArray(settings.characterLockProfiles)) {
+        settings.characterLockProfiles = {};
+    }
+    const value = String(settings.characterLock || '');
+    if (value) settings.characterLockProfiles[profileKey] = value;
+    else delete settings.characterLockProfiles[profileKey];
+    settings.activeCharacterLockProfileKey = profileKey;
 }
 
 function migrateLegacyWardrobe(settings) {
@@ -1629,6 +1681,7 @@ function bindSettingInput(root, selector, key, mode = 'value', after = null) {
         else if (mode === 'seconds') settings[key] = Math.max(30, Number(input.value) || 180) * 1000;
         else if (mode === 'cooldownSeconds') settings[key] = Math.max(0, Number(input.value) || 0) * 1000;
         else settings[key] = input.value;
+        if (key === 'characterLock') persistCharacterLockProfile(settings);
         const normalized = getSettings();
         if (mode === 'int') input.value = String(normalized[key]);
         else if (mode === 'seconds') input.value = String(Math.round(normalized[key] / 1000));
@@ -1916,6 +1969,7 @@ function deleteSavedStyle(id) {
     const deletedValue = `saved:${savedId}`;
     if (settings.stylePreset === deletedValue) settings.stylePreset = DEFAULT_SETTINGS.stylePreset;
     if (settings.savedDraft?.stylePreset === deletedValue) settings.savedDraft.stylePreset = settings.stylePreset;
+    if (settings.savedDraft) settings.savedDraftProfiles[getSavedDraftProfileKey()] = structuredClone(settings.savedDraft);
     saveSettings();
     syncPresetUi();
     saveDraftFromModal(state.modal);
@@ -1933,6 +1987,7 @@ function deleteSavedLayout(id) {
     const deletedValue = `saved:${savedId}`;
     if (settings.layout === deletedValue) settings.layout = DEFAULT_SETTINGS.layout;
     if (settings.savedDraft?.layout === deletedValue) settings.savedDraft.layout = settings.layout;
+    if (settings.savedDraft) settings.savedDraftProfiles[getSavedDraftProfileKey()] = structuredClone(settings.savedDraft);
     saveSettings();
     syncPresetUi();
     saveDraftFromModal(state.modal);
@@ -2577,6 +2632,25 @@ function getSavedDraft(settings = getSettings()) {
     };
 }
 
+function applySavedDraftToModal(root, draft) {
+    if (!root?.isConnected || !draft) return;
+    setValueSilent(root, '#bbcf-draft-title', draft.title || 'Comic page');
+    setValueSilent(root, '#bbcf-draft-mode', draft.generationMode || getSettings().generationMode);
+    setValueSilent(root, '#bbcf-draft-insert-mode', draft.insertMode || getSettings().insertMode);
+    setValueSilent(root, '#bbcf-draft-count', draft.panelCount || getSettings().panelCount);
+    syncPresetUi({ styleValue: draft.stylePreset, layoutValue: draft.layout });
+    setValueSilent(root, '#bbcf-draft-layout', draft.layout || getSettings().layout);
+    setValueSilent(root, '#bbcf-draft-style', draft.stylePreset || getSettings().stylePreset);
+    setValueSilent(root, '#bbcf-draft-scene', draft.scene || '');
+    setValueSilent(root, '#bbcf-draft-lock', draft.characterLock || '');
+    setValueSilent(root, '#bbcf-draft-notes', draft.panelNotes || '');
+    setValueSilent(root, '#bbcf-draft-bubbles', draft.bubbles || '');
+    setValueSilent(root, '#bbcf-draft-fanservice', draft.fanservicePanel || 0);
+    setValueSilent(root, '#bbcf-draft-sfx', draft.sfx || '');
+    setValueSilent(root, '#bbcf-draft-custom-style', draft.customPrompt || '');
+    setValueSilent(root, '#bbcf-draft-negative', draft.negativePrompt || getSettings().negativePrompt);
+}
+
 function saveDraftToSettings(draft) {
     const settings = getSettings();
     settings.savedDraft = {
@@ -2596,6 +2670,8 @@ function saveDraftToSettings(draft) {
         customPrompt: String(draft.customPrompt ?? draft.customStyle ?? ''),
         negativePrompt: String(draft.negativePrompt || settings.negativePrompt || DEFAULT_NEGATIVE_PROMPT),
     };
+    settings.savedDraftProfiles[getSavedDraftProfileKey()] = structuredClone(settings.savedDraft);
+    settings.activeSavedDraftProfileKey = getSavedDraftProfileKey();
     saveSettings();
 }
 
@@ -2638,6 +2714,7 @@ async function fillDraftFromAi(root, { throwErrors = false, signal = null } = {}
         throwIfAborted(signal);
         const draft = extractJsonObject(raw);
         applyAiDraft(root, draft);
+        saveDraftFromModal(root);
         toastr.success('Черновик комикса собран.', 'Comic Forge');
     } catch (error) {
         if (isAbortError(error)) {
@@ -2822,7 +2899,16 @@ function loosenDraftJson(text) {
 function applyAiDraft(root, draft) {
     setValue(root, '#bbcf-draft-title', draft.title || 'Comic page');
     setValue(root, '#bbcf-draft-scene', draft.scene || '');
-    if (draft.character_lock) setValue(root, '#bbcf-draft-lock', draft.character_lock);
+    const characterLock = getDraftTextField(draft, [
+        'character_lock',
+        'characterLock',
+        'character_description',
+        'characterDescription',
+        'characters',
+        'character_notes',
+        'characterNotes',
+    ]);
+    if (characterLock) setValue(root, '#bbcf-draft-lock', characterLock);
     if (Array.isArray(draft.panel_notes)) {
         setValue(root, '#bbcf-draft-notes', draft.panel_notes.map((note, index) => `${index + 1}. ${note}`).join('\n'));
     }
@@ -2844,11 +2930,41 @@ function applyAiDraft(root, draft) {
     }
 }
 
+function getDraftTextField(draft, keys) {
+    for (const key of keys) {
+        const value = draft?.[key];
+        if (Array.isArray(value)) {
+            const text = value.map(item => {
+                if (item && typeof item === 'object') {
+                    return [item.name, item.description || item.prompt || item.notes].filter(Boolean).join(': ');
+                }
+                return String(item || '');
+            }).filter(Boolean).join('\n');
+            if (text.trim()) return text.trim();
+        } else if (value && typeof value === 'object') {
+            const text = Object.entries(value)
+                .map(([name, description]) => `${name}: ${typeof description === 'string' ? description : JSON.stringify(description)}`)
+                .join('\n');
+            if (text.trim()) return text.trim();
+        } else {
+            const text = String(value || '').trim();
+            if (text) return text;
+        }
+    }
+    return '';
+}
+
 function setValue(root, selector, value) {
     const input = root.querySelector(selector);
     if (!input) return;
     input.value = String(value ?? '');
     input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function setValueSilent(root, selector, value) {
+    const input = root?.querySelector?.(selector);
+    if (!input) return;
+    input.value = String(value ?? '');
 }
 
 function applyDefaultPageSettingsToModal(root) {
@@ -4180,6 +4296,7 @@ function makeShareHtml(html) {
     doc.querySelectorAll('[data-bbcf-instruction]').forEach(node => {
         if (!node.classList.contains('bbcf-panel-error')) node.removeAttribute('data-bbcf-instruction');
     });
+    doc.querySelectorAll('.bbcf-export-notice').forEach(node => node.remove());
     doc.querySelectorAll('.bbcf-panel-action').forEach(node => node.remove());
     doc.querySelectorAll('.bbcf-comic-title span').forEach(span => {
         const text = span.textContent?.trim() || '';
@@ -4828,6 +4945,14 @@ function getReferenceProfileKey() {
 }
 
 function getWardrobeProfileKey() {
+    return getScopedProfileKey();
+}
+
+function getCharacterLockProfileKey() {
+    return getScopedProfileKey();
+}
+
+function getSavedDraftProfileKey() {
     return getScopedProfileKey();
 }
 
