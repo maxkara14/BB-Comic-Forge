@@ -3,6 +3,7 @@ import {
     eventSource,
     event_types,
     saveChat,
+    substituteParams,
     updateMessageBlock,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
@@ -55,6 +56,12 @@ Recent chat:
 
 Existing character lock:
 {{character_lock}}
+
+User persona:
+{{user_persona}}
+
+Current character card:
+{{character_context}}
 </context>
 
 <rules>
@@ -441,7 +448,7 @@ function getSettings() {
     if (!VALID_IMAGE_SIZES.includes(settings.imageSize)) settings.imageSize = DEFAULT_SETTINGS.imageSize;
     if (!VALID_ASPECT_RATIOS.includes(settings.aspectRatio) && settings.aspectRatio !== 'auto') settings.aspectRatio = DEFAULT_SETTINGS.aspectRatio;
     if (!VALID_ASPECT_RATIOS.includes(settings.naisteraAspectRatio) && settings.naisteraAspectRatio !== 'auto') settings.naisteraAspectRatio = DEFAULT_SETTINGS.naisteraAspectRatio;
-    if (!settings.negativePrompt) settings.negativePrompt = DEFAULT_NEGATIVE_PROMPT;
+    settings.negativePrompt = String(settings.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT);
     if (!Array.isArray(settings.wardrobeItems)) settings.wardrobeItems = [];
     if (!settings.wardrobeAssignments || typeof settings.wardrobeAssignments !== 'object') settings.wardrobeAssignments = {};
     if (Array.isArray(settings.wardrobe) && settings.wardrobe.some(item => item?.path || item?.description || item?.name)) {
@@ -526,20 +533,28 @@ function migrateDraftPrompt(value) {
     const insertExample = `"inserts": [
     { "panel": 3, "type": "detail", "position": "bottom-left", "text": "small bordered close-up of tense fingers gripping fabric" },
     { "panel": 4, "type": "chibi", "position": "bottom-right", "text": "tiny angry chibi reaction sticker holding a sign" }
-  ]`;
+    ]`;
     let prompt = String(value || DEFAULT_DRAFT_PROMPT);
-    if (!prompt.includes('"fanservice_panel"')) return prompt;
-    prompt = prompt.replace(
-        '- Do not write explicit sexual content. Fanservice, if useful, must stay tasteful and non-explicit.',
-        [
-            '- Add 0 to 2 overlay inserts only when they clearly improve the page.',
-            '- Use detail inserts for important hands, lips, eyes, weapons, objects, symbols, or action emphasis.',
-            '- Use chibi inserts only for comic, embarrassed, jealous, startled, or exaggerated reactions.',
-            '- Do not add inserts to calm/simple pages or already crowded panels.',
-            '- Do not write explicit sexual content.',
-        ].join('\n'),
-    );
-    return prompt.replace(/"fanservice_panel"\s*:\s*0/g, insertExample);
+    if (prompt.includes('"fanservice_panel"')) {
+        prompt = prompt.replace(
+            '- Do not write explicit sexual content. Fanservice, if useful, must stay tasteful and non-explicit.',
+            [
+                '- Add 0 to 2 overlay inserts only when they clearly improve the page.',
+                '- Use detail inserts for important hands, lips, eyes, weapons, objects, symbols, or action emphasis.',
+                '- Use chibi inserts only for comic, embarrassed, jealous, startled, or exaggerated reactions.',
+                '- Do not add inserts to calm/simple pages or already crowded panels.',
+                '- Do not write explicit sexual content.',
+            ].join('\n'),
+        );
+        prompt = prompt.replace(/"fanservice_panel"\s*:\s*0/g, insertExample);
+    }
+    if (prompt.includes('{{recent_chat}}') && prompt.includes('{{character_lock}}') && !prompt.includes('{{user_persona}}')) {
+        prompt = prompt.replace(
+            'Existing character lock:\n{{character_lock}}',
+            'Existing character lock:\n{{character_lock}}\n\nUser persona:\n{{user_persona}}\n\nCurrent character card:\n{{character_context}}',
+        );
+    }
+    return prompt;
 }
 
 function normalizeReferences(rawReferences) {
@@ -564,10 +579,21 @@ function normalizeSavedStyles(rawStyles) {
         .map(style => ({
             id: String(style.id || makeId('style')),
             label: String(style.label || style.name || 'Мой стиль').trim(),
-            prompt: String(style.prompt || '').trim(),
+            prompt: getSavedStylePrompt(style),
         }))
-        .filter(style => style.prompt)
-        .slice(0, 40);
+        .filter(style => style.id && (style.label || style.prompt));
+}
+
+function getSavedStylePrompt(style) {
+    return String(
+        style?.prompt
+        ?? style?.customPrompt
+        ?? style?.customStyle
+        ?? style?.description
+        ?? style?.text
+        ?? style?.value
+        ?? ''
+    ).trim();
 }
 
 function normalizeSavedLayouts(rawLayouts) {
@@ -975,6 +1001,9 @@ function createSettingsUi() {
                         <label for="bbcf-draft-prompt">Промпт AI-черновика</label>
                         <textarea id="bbcf-draft-prompt" class="text_pole" rows="6">${escapeHtml(settings.draftPrompt)}</textarea>
                     </div>
+                    <div class="bbcf-toolbar">
+                        <button class="menu_button" type="button" id="bbcf-reset-page-defaults"><i class="fa-solid fa-rotate-left"></i><span>Вернуть настройки по умолчанию</span></button>
+                    </div>
                 </details>
             </div>
         </div>
@@ -1040,9 +1069,48 @@ function bindSettingsUi(root) {
     bindSettingInput(root, '#bbcf-custom-style', 'customPrompt');
     root.querySelector('#bbcf-save-style')?.addEventListener('click', () => saveStyleFromSettings(root));
     root.querySelector('#bbcf-save-layout')?.addEventListener('click', () => saveLayoutFromSettings(root));
+    root.querySelector('#bbcf-reset-page-defaults')?.addEventListener('click', () => resetDefaultPageSettings(root));
     bindSettingInput(root, '#bbcf-character-lock', 'characterLock');
     bindSettingInput(root, '#bbcf-negative', 'negativePrompt');
     bindSettingInput(root, '#bbcf-draft-prompt', 'draftPrompt');
+}
+
+function resetDefaultPageSettings(root) {
+    if (!window.confirm('Вернуть настройки страницы по умолчанию? API, модели, референсы, гардероб и история не изменятся.')) return;
+    const settings = getSettings();
+    const defaults = DEFAULT_SETTINGS;
+    settings.generationMode = defaults.generationMode;
+    settings.insertMode = defaults.insertMode;
+    settings.panelCount = defaults.panelCount;
+    settings.concurrency = defaults.concurrency;
+    settings.requestCooldownMs = defaults.requestCooldownMs;
+    settings.contextMessages = defaults.contextMessages;
+    settings.previousImageCount = defaults.previousImageCount;
+    settings.layout = defaults.layout;
+    settings.stylePreset = defaults.stylePreset;
+    settings.customPrompt = defaults.customPrompt;
+    settings.negativePrompt = defaults.negativePrompt;
+    settings.draftPrompt = defaults.draftPrompt;
+    setSettingsControlValue(root, '#bbcf-generation-mode', settings.generationMode);
+    setSettingsControlValue(root, '#bbcf-insert-mode', settings.insertMode);
+    setSettingsControlValue(root, '#bbcf-panel-count', settings.panelCount);
+    setSettingsControlValue(root, '#bbcf-concurrency', settings.concurrency);
+    setSettingsControlValue(root, '#bbcf-cooldown', Math.round(settings.requestCooldownMs / 1000));
+    setSettingsControlValue(root, '#bbcf-context-messages', settings.contextMessages);
+    setSettingsControlValue(root, '#bbcf-previous-image-count', settings.previousImageCount);
+    setSettingsControlValue(root, '#bbcf-layout', settings.layout);
+    setSettingsControlValue(root, '#bbcf-style-preset', settings.stylePreset);
+    setSettingsControlValue(root, '#bbcf-custom-style', settings.customPrompt);
+    setSettingsControlValue(root, '#bbcf-negative', settings.negativePrompt);
+    setSettingsControlValue(root, '#bbcf-draft-prompt', settings.draftPrompt);
+    saveSettings();
+    toastr.success('Настройки страницы по умолчанию восстановлены.', 'Comic Forge');
+}
+
+function setSettingsControlValue(root, selector, value) {
+    const input = root?.querySelector?.(selector);
+    if (!input) return;
+    input.value = String(value ?? '');
 }
 
 function buildReferenceSettingsHtml(settings) {
@@ -2633,7 +2701,7 @@ function readDraftFromModal(root) {
         inserts: valueOf(root, '#bbcf-draft-inserts'),
         sfx: valueOf(root, '#bbcf-draft-sfx'),
         customPrompt: valueOf(root, '#bbcf-draft-custom-style'),
-        negativePrompt: valueOf(root, '#bbcf-draft-negative') || getSettings().negativePrompt,
+        negativePrompt: valueOf(root, '#bbcf-draft-negative'),
     };
 }
 
@@ -2654,7 +2722,7 @@ function getSavedDraft(settings = getSettings()) {
         inserts: String(raw.inserts || ''),
         sfx: String(raw.sfx || ''),
         customPrompt: String(raw.customPrompt ?? raw.customStyle ?? settings.customPrompt ?? settings.customStyle ?? ''),
-        negativePrompt: String(raw.negativePrompt || settings.negativePrompt || DEFAULT_NEGATIVE_PROMPT),
+        negativePrompt: settings.negativePrompt,
     };
 }
 
@@ -2674,7 +2742,7 @@ function applySavedDraftToModal(root, draft) {
     setValueSilent(root, '#bbcf-draft-inserts', draft.inserts || '');
     setValueSilent(root, '#bbcf-draft-sfx', draft.sfx || '');
     setValueSilent(root, '#bbcf-draft-custom-style', draft.customPrompt || '');
-    setValueSilent(root, '#bbcf-draft-negative', draft.negativePrompt || getSettings().negativePrompt);
+    setValueSilent(root, '#bbcf-draft-negative', draft.negativePrompt ?? getSettings().negativePrompt);
 }
 
 function saveDraftToSettings(draft) {
@@ -2694,7 +2762,7 @@ function saveDraftToSettings(draft) {
         inserts: String(draft.inserts || ''),
         sfx: String(draft.sfx || ''),
         customPrompt: String(draft.customPrompt ?? draft.customStyle ?? ''),
-        negativePrompt: String(draft.negativePrompt || settings.negativePrompt || DEFAULT_NEGATIVE_PROMPT),
+        negativePrompt: String(draft.negativePrompt ?? ''),
     };
     settings.savedDraftProfiles[getSavedDraftProfileKey()] = structuredClone(settings.savedDraft);
     settings.activeSavedDraftProfileKey = getSavedDraftProfileKey();
@@ -2763,10 +2831,38 @@ function buildDraftPrompt(root) {
     const recentChat = collectRecentChat(settings.contextMessages);
     const panelCount = clampInt(valueOf(root, '#bbcf-draft-count'), 1, MAX_PANELS, settings.panelCount);
     const characterLock = valueOf(root, '#bbcf-draft-lock') || settings.characterLock || '';
+    const userPersona = resolveMacroText('{{persona}}') || 'No user persona description is available.';
+    const characterContext = buildCharacterMacroContext() || 'No character card context is available.';
     return String(settings.draftPrompt || DEFAULT_DRAFT_PROMPT)
         .replaceAll('{{recent_chat}}', recentChat || 'No recent chat context is available.')
         .replaceAll('{{character_lock}}', characterLock || 'No character lock was provided.')
+        .replaceAll('{{user_persona}}', userPersona)
+        .replaceAll('{{character_context}}', characterContext)
         .replaceAll('{{panel_count}}', String(panelCount));
+}
+
+function buildCharacterMacroContext() {
+    const lines = [
+        ['Name', resolveMacroText('{{char}}')],
+        ['Description', resolveMacroText('{{description}}')],
+        ['Personality', resolveMacroText('{{personality}}')],
+        ['Scenario', resolveMacroText('{{scenario}}')],
+    ];
+    return lines
+        .filter(([, value]) => value)
+        .map(([label, value]) => `${label}: ${value}`)
+        .join('\n');
+}
+
+function resolveMacroText(text) {
+    try {
+        const result = substituteParams(String(text || ''));
+        const resolved = String(result || '').replace(/\r/g, '').trim();
+        return /\{\{[^}]+\}\}/.test(resolved) ? '' : resolved;
+    } catch (error) {
+        console.warn('[BB Comic Forge] macro substitution failed', error);
+        return '';
+    }
 }
 
 async function runDraftPrompt(prompt, signal = null) {
