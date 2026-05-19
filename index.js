@@ -4412,8 +4412,6 @@ function restoreCurrentPreview(root) {
 function clearForgePreview(root) {
     const preview = root?.querySelector('#bbcf-preview-content');
     if (preview) preview.innerHTML = '<p class="bbcf-hint">Превью очищено.</p>';
-    const progress = root?.querySelector('#bbcf-progress');
-    if (progress) progress.innerHTML = '';
     state.pendingComic = null;
     setHistoryPreviewMode(root, false);
     updateSendToChatButton(root);
