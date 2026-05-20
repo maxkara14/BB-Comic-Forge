@@ -21,6 +21,21 @@ const MAX_COMIC_HISTORY = 24;
 const MAX_PREVIOUS_CONTEXT_IMAGES = 3;
 const MAX_CONCURRENCY = 6;
 const DRAFT_CONNECTION_MODES = ['sillytavern', 'openai-chat', 'gemini'];
+const DRAFT_SYNC_FIELDS = ['generationMode', 'insertMode', 'panelCount', 'layout', 'stylePreset', 'characterLock', 'panelNotes', 'bubbles', 'inserts', 'sfx', 'customPrompt', 'negativePrompt'];
+const DRAFT_SYNC_SELECTORS = {
+    generationMode: '#bbcf-draft-mode',
+    insertMode: '#bbcf-draft-insert-mode',
+    panelCount: '#bbcf-draft-count',
+    layout: '#bbcf-draft-layout',
+    stylePreset: '#bbcf-draft-style',
+    characterLock: '#bbcf-draft-lock',
+    panelNotes: '#bbcf-draft-notes',
+    bubbles: '#bbcf-draft-bubbles',
+    inserts: '#bbcf-draft-inserts',
+    sfx: '#bbcf-draft-sfx',
+    customPrompt: '#bbcf-draft-custom-style',
+    negativePrompt: '#bbcf-draft-negative',
+};
 
 const STYLE_PRESETS = {
     manhwa: {
@@ -97,7 +112,7 @@ Current character card:
 </format>`;
 
 const DEFAULT_SETTINGS = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     enabled: true,
     showFab: true,
     apiType: 'onlysq-imagen',
@@ -127,6 +142,10 @@ const DEFAULT_SETTINGS = {
     savedLayouts: [],
     negativePrompt: DEFAULT_NEGATIVE_PROMPT,
     characterLock: '',
+    defaultPanelNotes: '',
+    defaultBubbles: '',
+    defaultInserts: '',
+    defaultSfx: '',
     contextMessages: 4,
     previousImageCount: 0,
     draftPrompt: DEFAULT_DRAFT_PROMPT,
@@ -136,6 +155,10 @@ const DEFAULT_SETTINGS = {
     draftModel: '',
     availableDraftModels: [],
     draftTemperature: 0.35,
+    draftConnectionProfiles: [],
+    activeDraftConnectionProfileId: '',
+    draftPromptPresets: [],
+    activeDraftPromptPresetId: '',
     references: [],
     referenceProfiles: {},
     activeReferenceProfileKey: '',
@@ -447,10 +470,22 @@ function getSettings() {
     if (!Array.isArray(settings.availableDraftModels)) settings.availableDraftModels = [];
     settings.availableDraftModels = filterDraftModelNames(settings.availableDraftModels, settings.draftConnectionMode);
     settings.draftTemperature = Math.max(0, Math.min(2, Number(settings.draftTemperature ?? DEFAULT_SETTINGS.draftTemperature) || 0));
+    settings.draftConnectionProfiles = normalizeDraftConnectionProfiles(settings.draftConnectionProfiles);
+    if (!settings.draftConnectionProfiles.some(profile => profile.id === settings.activeDraftConnectionProfileId)) {
+        settings.activeDraftConnectionProfileId = '';
+    }
+    settings.draftPromptPresets = normalizeDraftPromptPresets(settings.draftPromptPresets);
+    if (!settings.draftPromptPresets.some(preset => preset.id === settings.activeDraftPromptPresetId)) {
+        settings.activeDraftPromptPresetId = '';
+    }
     if (!VALID_IMAGE_SIZES.includes(settings.imageSize)) settings.imageSize = DEFAULT_SETTINGS.imageSize;
     if (!VALID_ASPECT_RATIOS.includes(settings.aspectRatio) && settings.aspectRatio !== 'auto') settings.aspectRatio = DEFAULT_SETTINGS.aspectRatio;
     if (!VALID_ASPECT_RATIOS.includes(settings.naisteraAspectRatio) && settings.naisteraAspectRatio !== 'auto') settings.naisteraAspectRatio = DEFAULT_SETTINGS.naisteraAspectRatio;
     settings.negativePrompt = String(settings.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT);
+    settings.defaultPanelNotes = String(settings.defaultPanelNotes || '');
+    settings.defaultBubbles = String(settings.defaultBubbles || '');
+    settings.defaultInserts = String(settings.defaultInserts || '');
+    settings.defaultSfx = String(settings.defaultSfx || '');
     if (!Array.isArray(settings.wardrobeItems)) settings.wardrobeItems = [];
     if (!settings.wardrobeAssignments || typeof settings.wardrobeAssignments !== 'object') settings.wardrobeAssignments = {};
     if (Array.isArray(settings.wardrobe) && settings.wardrobe.some(item => item?.path || item?.description || item?.name)) {
@@ -517,14 +552,10 @@ function getSettings() {
         dirty = true;
     }
     const referenceProfileKey = getReferenceProfileKey();
-    const legacyReferenceProfileKey = getLegacyReferenceProfileKey();
     const unscopedReferenceProfileKey = 'legacy:unscoped';
     const existingReferences = normalizeReferences(settings.references);
     const hasLegacyReferences = existingReferences.some(ref => ref.path || ref.name || ref.description);
-    if (!settings.referenceProfiles[referenceProfileKey] && settings.referenceProfiles[legacyReferenceProfileKey]) {
-        settings.referenceProfiles[referenceProfileKey] = structuredClone(normalizeReferences(settings.referenceProfiles[legacyReferenceProfileKey]));
-        dirty = true;
-    } else if (!settings.referencesMigratedToProfiles && hasLegacyReferences && !settings.referenceProfiles[unscopedReferenceProfileKey]) {
+    if (!settings.referencesMigratedToProfiles && hasLegacyReferences && !settings.referenceProfiles[unscopedReferenceProfileKey]) {
         settings.referenceProfiles[unscopedReferenceProfileKey] = structuredClone(existingReferences);
         dirty = true;
     }
@@ -620,6 +651,61 @@ function normalizeSavedLayouts(rawLayouts) {
             singleAspect: VALID_ASPECT_RATIOS.includes(layout.singleAspect) ? layout.singleAspect : '3:4',
         }))
         .filter(layout => layout.pattern.length)
+        .slice(0, 40);
+}
+
+function normalizeDraftConnectionProfiles(rawProfiles) {
+    const profiles = Array.isArray(rawProfiles) ? rawProfiles : [];
+    return profiles
+        .filter(profile => profile && typeof profile === 'object')
+        .map(profile => {
+            const mode = DRAFT_CONNECTION_MODES.includes(profile.draftConnectionMode) ? profile.draftConnectionMode : DEFAULT_SETTINGS.draftConnectionMode;
+            const availableDraftModels = filterDraftModelNames(Array.isArray(profile.availableDraftModels) ? profile.availableDraftModels : [], mode);
+            return {
+                id: String(profile.id || makeId('draft-connection')),
+                label: String(profile.label || profile.name || getDraftConnectionProfileFallbackLabel(profile, mode)).trim(),
+                draftConnectionMode: mode,
+                draftEndpoint: String(profile.draftEndpoint || ''),
+                draftApiKey: String(profile.draftApiKey || ''),
+                draftModel: String(profile.draftModel || ''),
+                availableDraftModels,
+                draftTemperature: Math.max(0, Math.min(2, Number(profile.draftTemperature ?? DEFAULT_SETTINGS.draftTemperature) || 0)),
+            };
+        })
+        .filter(profile => profile.id && profile.label)
+        .slice(0, 40);
+}
+
+function getDraftConnectionProfileFallbackLabel(profile = {}, mode = DEFAULT_SETTINGS.draftConnectionMode) {
+    const model = String(profile.draftModel || '').trim();
+    if (model) return model;
+    if (mode === 'sillytavern') return 'SillyTavern';
+    if (mode === 'gemini') return 'Gemini draft';
+    return 'OpenAI draft';
+}
+
+function normalizeDraftPromptPresets(rawPresets) {
+    const presets = Array.isArray(rawPresets) ? rawPresets : [];
+    return presets
+        .filter(preset => preset && typeof preset === 'object')
+        .map(preset => ({
+            id: String(preset.id || makeId('draft-prompt')),
+            label: String(preset.label || preset.name || 'Мой набор черновика').trim(),
+            draftPrompt: migrateDraftPrompt(preset.draftPrompt ?? preset.prompt ?? ''),
+            generationMode: ['panels', 'single'].includes(preset.generationMode) ? preset.generationMode : DEFAULT_SETTINGS.generationMode,
+            insertMode: ['new', 'append_last'].includes(preset.insertMode) ? preset.insertMode : DEFAULT_SETTINGS.insertMode,
+            panelCount: clampInt(preset.panelCount, 1, MAX_PANELS, DEFAULT_SETTINGS.panelCount),
+            layout: String(preset.layout || DEFAULT_SETTINGS.layout),
+            stylePreset: String(preset.stylePreset || DEFAULT_SETTINGS.stylePreset),
+            characterLock: String(preset.characterLock || ''),
+            panelNotes: String(preset.panelNotes || ''),
+            bubbles: String(preset.bubbles || ''),
+            inserts: String(preset.inserts || ''),
+            sfx: String(preset.sfx || ''),
+            customPrompt: String(preset.customPrompt ?? preset.customStyle ?? ''),
+            negativePrompt: String(preset.negativePrompt ?? ''),
+        }))
+        .filter(preset => preset.id && preset.label)
         .slice(0, 40);
 }
 
@@ -742,6 +828,8 @@ function createSettingsUi() {
     const container = document.getElementById('extensions_settings');
     if (!container) return;
     const settings = getSettings();
+    const activeDraftConnectionProfile = getActiveDraftConnectionProfile(settings);
+    const activeDraftPromptPreset = getActiveDraftPromptPreset(settings);
     const wrapper = document.createElement('div');
     wrapper.id = SETTINGS_ID;
     wrapper.className = 'inline-drawer';
@@ -850,6 +938,22 @@ function createSettingsUi() {
                 <section class="bbcf-section">
                     <h4 class="bbcf-section-title"><i class="fa-solid fa-scroll"></i> AI-черновик</h4>
                     <p class="bbcf-hint bbcf-draft-connection-note" id="bbcf-draft-connection-note"></p>
+                    <div class="bbcf-compact-tools">
+                        <div class="bbcf-row">
+                            <label for="bbcf-draft-connection-profile">Профиль подключения</label>
+                            <select id="bbcf-draft-connection-profile" class="text_pole">
+                                ${buildDraftConnectionProfileOptionsHtml(settings)}
+                            </select>
+                        </div>
+                        <div class="bbcf-row">
+                            <label for="bbcf-draft-connection-profile-name">Название профиля</label>
+                            <input id="bbcf-draft-connection-profile-name" class="text_pole" type="text" value="${escapeHtml(activeDraftConnectionProfile?.label || '')}" placeholder="Например: OnlySQ draft proxy">
+                        </div>
+                        <div class="bbcf-compact-actions">
+                            <button class="menu_button" type="button" id="bbcf-save-draft-connection-profile"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>
+                            <button class="menu_button bbcf-danger" type="button" id="bbcf-delete-draft-connection-profile" ${activeDraftConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить</span></button>
+                        </div>
+                    </div>
                     <div class="bbcf-grid-2">
                         <div class="bbcf-row">
                             <label for="bbcf-draft-connection-mode">Кто пишет черновик</label>
@@ -952,17 +1056,19 @@ function createSettingsUi() {
                             <input id="bbcf-previous-image-count" class="text_pole" type="number" min="0" max="${MAX_PREVIOUS_CONTEXT_IMAGES}" value="${settings.previousImageCount}">
                         </div>
                     </div>
-                    <div class="bbcf-row">
+                    <div class="bbcf-grid-2">
+                        <div class="bbcf-row">
                             <label for="bbcf-layout">Макет</label>
                             <select id="bbcf-layout" class="text_pole">
-                            ${buildLayoutOptionsHtml(settings, settings.layout)}
-                        </select>
-                    </div>
-                    <div class="bbcf-row">
-                        <label for="bbcf-style-preset">Стиль</label>
-                        <select id="bbcf-style-preset" class="text_pole">
-                            ${buildStyleOptionsHtml(settings, settings.stylePreset)}
-                        </select>
+                                ${buildLayoutOptionsHtml(settings, settings.layout)}
+                            </select>
+                        </div>
+                        <div class="bbcf-row">
+                            <label for="bbcf-style-preset">Стиль</label>
+                            <select id="bbcf-style-preset" class="text_pole">
+                                ${buildStyleOptionsHtml(settings, settings.stylePreset)}
+                            </select>
+                        </div>
                     </div>
                     <details class="bbcf-preset-help">
                         <summary><i class="fa-solid fa-palette"></i><span>Примеры и сохранение</span></summary>
@@ -997,6 +1103,22 @@ function createSettingsUi() {
                         </div>
                         <button class="menu_button" type="button" id="bbcf-save-layout"><i class="fa-solid fa-table-cells-large"></i><span>Сохранить макет</span></button>
                     </details>
+                    <div class="bbcf-compact-tools">
+                        <div class="bbcf-row">
+                            <label for="bbcf-draft-prompt-preset">Набор черновика</label>
+                            <select id="bbcf-draft-prompt-preset" class="text_pole">
+                                ${buildDraftPromptPresetOptionsHtml(settings)}
+                            </select>
+                        </div>
+                        <div class="bbcf-row">
+                            <label for="bbcf-draft-prompt-preset-name">Название набора</label>
+                            <input id="bbcf-draft-prompt-preset-name" class="text_pole" type="text" value="${escapeHtml(activeDraftPromptPreset?.label || '')}" placeholder="Например: динамичный вебтун">
+                        </div>
+                        <div class="bbcf-compact-actions">
+                            <button class="menu_button" type="button" id="bbcf-save-draft-prompt-preset"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>
+                            <button class="menu_button bbcf-danger" type="button" id="bbcf-delete-draft-prompt-preset" ${activeDraftPromptPreset ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить</span></button>
+                        </div>
+                    </div>
                     <div class="bbcf-field">
                         <label for="bbcf-custom-style">Дополнительные инструкции к генерации</label>
                         <textarea id="bbcf-custom-style" class="text_pole" rows="3" placeholder="Разовые правки поверх выбранного стиля: свет, ракурс, темп, материалы.">${escapeHtml(settings.customPrompt)}</textarea>
@@ -1004,6 +1126,22 @@ function createSettingsUi() {
                     <div class="bbcf-field">
                         <label for="bbcf-character-lock">Описание персонажей</label>
                         <textarea id="bbcf-character-lock" class="text_pole" rows="4" placeholder="Описание персонажей, одежды, особенностей и текущего состояния.">${escapeHtml(settings.characterLock)}</textarea>
+                    </div>
+                    <div class="bbcf-field">
+                        <label for="bbcf-default-panel-notes">План панелей по умолчанию</label>
+                        <textarea id="bbcf-default-panel-notes" class="text_pole" rows="4" placeholder="1. Общий план&#10;2. Реакция героя&#10;3. Деталь или вставка">${escapeHtml(settings.defaultPanelNotes)}</textarea>
+                    </div>
+                    <div class="bbcf-field">
+                        <label for="bbcf-default-bubbles">Реплики по умолчанию: panel | type | position | text</label>
+                        <textarea id="bbcf-default-bubbles" class="text_pole" rows="3" placeholder="1|speech|top-left|Ты правда это сказала?">${escapeHtml(settings.defaultBubbles)}</textarea>
+                    </div>
+                    <div class="bbcf-field">
+                        <label for="bbcf-default-inserts">Вставки по умолчанию: panel | type | position | text</label>
+                        <textarea id="bbcf-default-inserts" class="text_pole" rows="3" placeholder="3|detail|bottom-left|крупный план руки">${escapeHtml(settings.defaultInserts)}</textarea>
+                    </div>
+                    <div class="bbcf-field">
+                        <label for="bbcf-default-sfx">SFX по умолчанию: panel | text</label>
+                        <textarea id="bbcf-default-sfx" class="text_pole" rows="2" placeholder="3|БАХ">${escapeHtml(settings.defaultSfx)}</textarea>
                     </div>
                     <div class="bbcf-field">
                         <label for="bbcf-negative">Negative Prompt</label>
@@ -1024,6 +1162,8 @@ function createSettingsUi() {
     bindSettingsUi(wrapper);
     syncProviderRows();
     syncDraftConnectionRows();
+    syncDraftConnectionProfileUi(wrapper);
+    syncDraftPromptPresetUi({ forceName: true });
 }
 
 function bindSettingsUi(root) {
@@ -1033,6 +1173,12 @@ function bindSettingsUi(root) {
     root.querySelector('#bbcf-load-draft-models')?.addEventListener('click', () => loadDraftModels({ button: root.querySelector('#bbcf-load-draft-models') }));
     root.querySelector('#bbcf-test-draft-api')?.addEventListener('click', testDraftSettings);
     root.querySelector('#bbcf-open-wardrobe')?.addEventListener('click', openWardrobeModal);
+    root.querySelector('#bbcf-draft-connection-profile')?.addEventListener('change', () => applyDraftConnectionProfile(root));
+    root.querySelector('#bbcf-save-draft-connection-profile')?.addEventListener('click', () => saveDraftConnectionProfile(root));
+    root.querySelector('#bbcf-delete-draft-connection-profile')?.addEventListener('click', () => deleteDraftConnectionProfile(root));
+    root.querySelector('#bbcf-draft-prompt-preset')?.addEventListener('change', () => applyDraftPromptPreset(root, { source: 'settings' }));
+    root.querySelector('#bbcf-save-draft-prompt-preset')?.addEventListener('click', () => saveDraftPromptPreset(root, { source: 'settings' }));
+    root.querySelector('#bbcf-delete-draft-prompt-preset')?.addEventListener('click', () => deleteDraftPromptPreset(root));
     bindPresetDeleteActions(root);
     bindReferenceSettings(root);
     bindSettingInput(root, '#bbcf-enabled', 'enabled', 'checked', () => updateFloatingButton());
@@ -1055,6 +1201,7 @@ function bindSettingsUi(root) {
         if (settings.draftConnectionMode === 'sillytavern') settings.draftModel = '';
         saveSettings();
         syncDraftConnectionRows();
+        syncDraftConnectionProfileUi(root);
     });
     bindSettingInput(root, '#bbcf-draft-endpoint', 'draftEndpoint');
     bindSettingInput(root, '#bbcf-draft-api-key', 'draftApiKey');
@@ -1069,21 +1216,29 @@ function bindSettingsUi(root) {
     bindSettingInput(root, '#bbcf-naistera-model', 'naisteraModel');
     bindSettingInput(root, '#bbcf-naistera-preset', 'naisteraPreset');
     bindSettingInput(root, '#bbcf-timeout', 'timeoutMs', 'seconds');
-    bindSettingInput(root, '#bbcf-generation-mode', 'generationMode');
-    bindSettingInput(root, '#bbcf-insert-mode', 'insertMode');
+    bindSettingInput(root, '#bbcf-generation-mode', 'generationMode', 'value', () => syncDefaultDraftField('generationMode'));
+    bindSettingInput(root, '#bbcf-insert-mode', 'insertMode', 'value', () => syncDefaultDraftField('insertMode'));
     bindSettingInput(root, '#bbcf-cooldown', 'requestCooldownMs', 'cooldownSeconds');
-    bindSettingInput(root, '#bbcf-panel-count', 'panelCount', 'int');
+    bindSettingInput(root, '#bbcf-panel-count', 'panelCount', 'int', () => syncDefaultDraftField('panelCount'));
     bindSettingInput(root, '#bbcf-concurrency', 'concurrency', 'int');
     bindSettingInput(root, '#bbcf-context-messages', 'contextMessages', 'int');
     bindSettingInput(root, '#bbcf-previous-image-count', 'previousImageCount', 'int');
-    bindSettingInput(root, '#bbcf-layout', 'layout');
-    bindSettingInput(root, '#bbcf-style-preset', 'stylePreset');
-    bindSettingInput(root, '#bbcf-custom-style', 'customPrompt');
+    bindSettingInput(root, '#bbcf-layout', 'layout', 'value', () => syncDefaultDraftField('layout'));
+    bindSettingInput(root, '#bbcf-style-preset', 'stylePreset', 'value', () => syncDefaultDraftField('stylePreset'));
+    bindSettingInput(root, '#bbcf-custom-style', 'customPrompt', 'value', () => {
+        syncDefaultDraftField('customPrompt');
+    });
     root.querySelector('#bbcf-save-style')?.addEventListener('click', () => saveStyleFromSettings(root));
     root.querySelector('#bbcf-save-layout')?.addEventListener('click', () => saveLayoutFromSettings(root));
     root.querySelector('#bbcf-reset-page-defaults')?.addEventListener('click', () => resetDefaultPageSettings(root));
-    bindSettingInput(root, '#bbcf-character-lock', 'characterLock');
-    bindSettingInput(root, '#bbcf-negative', 'negativePrompt');
+    bindSettingInput(root, '#bbcf-character-lock', 'characterLock', 'value', () => syncDefaultDraftField('characterLock'));
+    bindSettingInput(root, '#bbcf-default-panel-notes', 'defaultPanelNotes', 'value', () => syncDefaultDraftField('panelNotes'));
+    bindSettingInput(root, '#bbcf-default-bubbles', 'defaultBubbles', 'value', () => syncDefaultDraftField('bubbles'));
+    bindSettingInput(root, '#bbcf-default-inserts', 'defaultInserts', 'value', () => syncDefaultDraftField('inserts'));
+    bindSettingInput(root, '#bbcf-default-sfx', 'defaultSfx', 'value', () => syncDefaultDraftField('sfx'));
+    bindSettingInput(root, '#bbcf-negative', 'negativePrompt', 'value', () => {
+        syncDefaultDraftField('negativePrompt');
+    });
     bindSettingInput(root, '#bbcf-draft-prompt', 'draftPrompt');
 }
 
@@ -1100,9 +1255,15 @@ function resetDefaultPageSettings(root) {
     settings.previousImageCount = defaults.previousImageCount;
     settings.layout = defaults.layout;
     settings.stylePreset = defaults.stylePreset;
+    settings.characterLock = defaults.characterLock;
     settings.customPrompt = defaults.customPrompt;
     settings.negativePrompt = defaults.negativePrompt;
+    settings.defaultPanelNotes = defaults.defaultPanelNotes;
+    settings.defaultBubbles = defaults.defaultBubbles;
+    settings.defaultInserts = defaults.defaultInserts;
+    settings.defaultSfx = defaults.defaultSfx;
     settings.draftPrompt = defaults.draftPrompt;
+    settings.activeDraftPromptPresetId = '';
     setSettingsControlValue(root, '#bbcf-generation-mode', settings.generationMode);
     setSettingsControlValue(root, '#bbcf-insert-mode', settings.insertMode);
     setSettingsControlValue(root, '#bbcf-panel-count', settings.panelCount);
@@ -1112,10 +1273,18 @@ function resetDefaultPageSettings(root) {
     setSettingsControlValue(root, '#bbcf-previous-image-count', settings.previousImageCount);
     setSettingsControlValue(root, '#bbcf-layout', settings.layout);
     setSettingsControlValue(root, '#bbcf-style-preset', settings.stylePreset);
+    setSettingsControlValue(root, '#bbcf-character-lock', settings.characterLock);
     setSettingsControlValue(root, '#bbcf-custom-style', settings.customPrompt);
+    setSettingsControlValue(root, '#bbcf-default-panel-notes', settings.defaultPanelNotes);
+    setSettingsControlValue(root, '#bbcf-default-bubbles', settings.defaultBubbles);
+    setSettingsControlValue(root, '#bbcf-default-inserts', settings.defaultInserts);
+    setSettingsControlValue(root, '#bbcf-default-sfx', settings.defaultSfx);
     setSettingsControlValue(root, '#bbcf-negative', settings.negativePrompt);
     setSettingsControlValue(root, '#bbcf-draft-prompt', settings.draftPrompt);
+    persistCharacterLockProfile(settings);
     saveSettings();
+    syncDraftPromptPresetUi({ forceName: true });
+    syncDefaultDraftFields(DRAFT_SYNC_FIELDS);
     toastr.success('Настройки страницы по умолчанию восстановлены.', 'Comic Forge');
 }
 
@@ -1798,22 +1967,26 @@ function bindSettingInput(root, selector, key, mode = 'value', after = null) {
         if (typeof after === 'function') after();
     });
     input.addEventListener('input', () => {
+        let shouldRunAfter = false;
         if (mode === 'int') {
             const settings = getSettings();
             settings[key] = clampNumberInput(input, Number(input.value));
             input.value = String(getSettings()[key]);
             saveSettings();
+            shouldRunAfter = true;
         } else if (mode === 'seconds' || mode === 'cooldownSeconds') {
             const settings = getSettings();
             const seconds = clampNumberInput(input, Number(input.value) || (mode === 'seconds' ? 180 : 0));
             settings[key] = seconds * 1000;
             input.value = String(Math.round(getSettings()[key] / 1000));
             saveSettings();
+            shouldRunAfter = true;
         } else if (input.tagName === 'TEXTAREA' || input.type === 'text' || input.type === 'password') {
             const settings = getSettings();
             settings[key] = input.value;
             saveSettings();
         }
+        if (shouldRunAfter && typeof after === 'function') after();
     });
 }
 
@@ -1851,6 +2024,211 @@ function syncDraftConnectionRows() {
     if (datalist) datalist.innerHTML = buildDraftModelOptionsHtml(settings);
     const note = root.querySelector('#bbcf-draft-connection-note');
     if (note) note.textContent = getDraftConnectionNote(settings.draftConnectionMode);
+}
+
+function syncDraftConnectionProfileUi(root = document.getElementById(SETTINGS_ID), { forceName = false } = {}) {
+    if (!root) return;
+    const settings = getSettings();
+    const active = getActiveDraftConnectionProfile(settings);
+    updateSelectOptions(root.querySelector('#bbcf-draft-connection-profile'), buildDraftConnectionProfileOptionsHtml(settings), settings.activeDraftConnectionProfileId);
+    const name = root.querySelector('#bbcf-draft-connection-profile-name');
+    if (name && document.activeElement !== name && (forceName || !name.value.trim())) name.value = active?.label || '';
+    const deleteButton = root.querySelector('#bbcf-delete-draft-connection-profile');
+    if (deleteButton) deleteButton.disabled = !active;
+}
+
+function applyDraftConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    const settings = getSettings();
+    const selectedId = String(root?.querySelector('#bbcf-draft-connection-profile')?.value || '');
+    const profile = settings.draftConnectionProfiles.find(item => item.id === selectedId);
+    if (!profile) {
+        settings.activeDraftConnectionProfileId = '';
+        saveSettings();
+        syncDraftConnectionProfileUi(root, { forceName: true });
+        return;
+    }
+    settings.draftConnectionMode = profile.draftConnectionMode;
+    settings.draftEndpoint = profile.draftEndpoint;
+    settings.draftApiKey = profile.draftApiKey;
+    settings.draftModel = profile.draftModel;
+    settings.availableDraftModels = filterDraftModelNames(profile.availableDraftModels, profile.draftConnectionMode);
+    settings.draftTemperature = profile.draftTemperature;
+    settings.activeDraftConnectionProfileId = profile.id;
+    saveSettings();
+    setSettingsControlValue(root, '#bbcf-draft-connection-mode', settings.draftConnectionMode);
+    setSettingsControlValue(root, '#bbcf-draft-endpoint', settings.draftEndpoint);
+    setSettingsControlValue(root, '#bbcf-draft-api-key', settings.draftApiKey);
+    setSettingsControlValue(root, '#bbcf-draft-model', settings.draftModel);
+    setSettingsControlValue(root, '#bbcf-draft-temperature', settings.draftTemperature);
+    syncDraftConnectionRows();
+    syncDraftConnectionProfileUi(root, { forceName: true });
+    toastr.success('Профиль подключения применён.', 'Comic Forge');
+}
+
+function saveDraftConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    const settings = getSettings();
+    const selectedId = settings.activeDraftConnectionProfileId || String(root?.querySelector('#bbcf-draft-connection-profile')?.value || '');
+    const existingIndex = settings.draftConnectionProfiles.findIndex(profile => profile.id === selectedId);
+    const label = String(root?.querySelector('#bbcf-draft-connection-profile-name')?.value || '').trim()
+        || (existingIndex >= 0 ? settings.draftConnectionProfiles[existingIndex].label : `Профиль черновика ${settings.draftConnectionProfiles.length + 1}`);
+    const profile = {
+        id: existingIndex >= 0 ? settings.draftConnectionProfiles[existingIndex].id : makeId('draft-connection'),
+        label,
+        draftConnectionMode: settings.draftConnectionMode,
+        draftEndpoint: settings.draftEndpoint,
+        draftApiKey: settings.draftApiKey,
+        draftModel: settings.draftModel,
+        availableDraftModels: filterDraftModelNames(settings.availableDraftModels, settings.draftConnectionMode),
+        draftTemperature: settings.draftTemperature,
+    };
+    if (existingIndex >= 0) settings.draftConnectionProfiles[existingIndex] = profile;
+    else settings.draftConnectionProfiles.unshift(profile);
+    settings.activeDraftConnectionProfileId = profile.id;
+    saveSettings();
+    syncDraftConnectionProfileUi(root, { forceName: true });
+    toastr.success(existingIndex >= 0 ? 'Профиль подключения обновлён.' : 'Профиль подключения сохранён.', 'Comic Forge');
+}
+
+function deleteDraftConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    const settings = getSettings();
+    const selectedId = settings.activeDraftConnectionProfileId || String(root?.querySelector('#bbcf-draft-connection-profile')?.value || '');
+    const profile = settings.draftConnectionProfiles.find(item => item.id === selectedId);
+    if (!profile) return;
+    if (!window.confirm(`Удалить профиль подключения "${profile.label}"?`)) return;
+    settings.draftConnectionProfiles = settings.draftConnectionProfiles.filter(item => item.id !== selectedId);
+    settings.activeDraftConnectionProfileId = '';
+    saveSettings();
+    syncDraftConnectionProfileUi(root, { forceName: true });
+    toastr.success('Профиль подключения удалён.', 'Comic Forge');
+}
+
+function syncDraftPromptPresetUi({ forceName = false } = {}) {
+    const settings = getSettings();
+    const active = getActiveDraftPromptPreset(settings);
+    const settingsRoot = document.getElementById(SETTINGS_ID);
+    const modalRoot = state.modal?.isConnected ? state.modal : null;
+    const targets = [
+        { root: settingsRoot, select: '#bbcf-draft-prompt-preset', name: '#bbcf-draft-prompt-preset-name', del: '#bbcf-delete-draft-prompt-preset' },
+        { root: modalRoot, select: '#bbcf-forge-draft-prompt-preset', name: '#bbcf-forge-draft-prompt-preset-name', del: '#bbcf-forge-delete-draft-prompt-preset' },
+    ];
+    for (const target of targets) {
+        if (!target.root) continue;
+        updateSelectOptions(target.root.querySelector(target.select), buildDraftPromptPresetOptionsHtml(settings), settings.activeDraftPromptPresetId);
+        const name = target.root.querySelector(target.name);
+        if (name && document.activeElement !== name && (forceName || !name.value.trim())) name.value = active?.label || '';
+        const deleteButton = target.root.querySelector(target.del);
+        if (deleteButton) deleteButton.disabled = !active;
+    }
+}
+
+function applyDraftPromptPreset(root, { source = 'settings' } = {}) {
+    const settings = getSettings();
+    const selectSelector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset';
+    const selectedId = String(root?.querySelector(selectSelector)?.value || '');
+    const preset = settings.draftPromptPresets.find(item => item.id === selectedId);
+    if (!preset) {
+        settings.activeDraftPromptPresetId = '';
+        saveSettings();
+        syncDraftPromptPresetUi({ forceName: true });
+        return;
+    }
+    settings.activeDraftPromptPresetId = preset.id;
+    settings.draftPrompt = preset.draftPrompt;
+    setSettingsControlValue(document.getElementById(SETTINGS_ID), '#bbcf-draft-prompt', settings.draftPrompt);
+    if (source === 'forge') {
+        setValueSilent(root, '#bbcf-draft-mode', preset.generationMode);
+        setValueSilent(root, '#bbcf-draft-insert-mode', preset.insertMode);
+        setValueSilent(root, '#bbcf-draft-count', preset.panelCount);
+        syncPresetUi({ styleValue: preset.stylePreset, layoutValue: preset.layout });
+        setValueSilent(root, '#bbcf-draft-layout', preset.layout);
+        setValueSilent(root, '#bbcf-draft-style', preset.stylePreset);
+        setValueSilent(root, '#bbcf-draft-lock', preset.characterLock);
+        setValueSilent(root, '#bbcf-draft-notes', preset.panelNotes);
+        setValueSilent(root, '#bbcf-draft-bubbles', preset.bubbles);
+        setValueSilent(root, '#bbcf-draft-inserts', preset.inserts);
+        setValueSilent(root, '#bbcf-draft-sfx', preset.sfx);
+        setValueSilent(root, '#bbcf-draft-custom-style', preset.customPrompt);
+        setValueSilent(root, '#bbcf-draft-negative', preset.negativePrompt);
+        saveSettings();
+        saveDraftFromModal(root, { manualFields: DRAFT_SYNC_FIELDS });
+    } else {
+        settings.generationMode = preset.generationMode;
+        settings.insertMode = preset.insertMode;
+        settings.panelCount = preset.panelCount;
+        settings.layout = preset.layout;
+        settings.stylePreset = preset.stylePreset;
+        settings.characterLock = preset.characterLock;
+        settings.defaultPanelNotes = preset.panelNotes;
+        settings.defaultBubbles = preset.bubbles;
+        settings.defaultInserts = preset.inserts;
+        settings.defaultSfx = preset.sfx;
+        settings.customPrompt = preset.customPrompt;
+        settings.negativePrompt = preset.negativePrompt;
+        persistCharacterLockProfile(settings);
+        saveSettings();
+        setSettingsControlValue(root, '#bbcf-generation-mode', settings.generationMode);
+        setSettingsControlValue(root, '#bbcf-insert-mode', settings.insertMode);
+        setSettingsControlValue(root, '#bbcf-panel-count', settings.panelCount);
+        syncPresetUi({ styleValue: settings.stylePreset, layoutValue: settings.layout });
+        setSettingsControlValue(root, '#bbcf-layout', settings.layout);
+        setSettingsControlValue(root, '#bbcf-style-preset', settings.stylePreset);
+        setSettingsControlValue(root, '#bbcf-character-lock', settings.characterLock);
+        setSettingsControlValue(root, '#bbcf-default-panel-notes', settings.defaultPanelNotes);
+        setSettingsControlValue(root, '#bbcf-default-bubbles', settings.defaultBubbles);
+        setSettingsControlValue(root, '#bbcf-default-inserts', settings.defaultInserts);
+        setSettingsControlValue(root, '#bbcf-default-sfx', settings.defaultSfx);
+        setSettingsControlValue(root, '#bbcf-custom-style', settings.customPrompt);
+        setSettingsControlValue(root, '#bbcf-negative', settings.negativePrompt);
+        syncDefaultDraftFields(DRAFT_SYNC_FIELDS);
+    }
+    syncDraftPromptPresetUi({ forceName: true });
+    toastr.success('Набор черновика применён.', 'Comic Forge');
+}
+
+function saveDraftPromptPreset(root, { source = 'settings' } = {}) {
+    const settings = getSettings();
+    const nameSelector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset-name' : '#bbcf-draft-prompt-preset-name';
+    const selectedId = settings.activeDraftPromptPresetId || String(root?.querySelector(source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset')?.value || '');
+    const existingIndex = settings.draftPromptPresets.findIndex(preset => preset.id === selectedId);
+    const label = String(root?.querySelector(nameSelector)?.value || '').trim()
+        || (existingIndex >= 0 ? settings.draftPromptPresets[existingIndex].label : `Набор черновика ${settings.draftPromptPresets.length + 1}`);
+    const preset = {
+        id: existingIndex >= 0 ? settings.draftPromptPresets[existingIndex].id : makeId('draft-prompt'),
+        label,
+        draftPrompt: String(settings.draftPrompt || DEFAULT_DRAFT_PROMPT),
+        generationMode: source === 'forge' ? valueOf(root, '#bbcf-draft-mode') : settings.generationMode,
+        insertMode: source === 'forge' ? valueOf(root, '#bbcf-draft-insert-mode') : settings.insertMode,
+        panelCount: source === 'forge' ? clampInt(valueOf(root, '#bbcf-draft-count'), 1, MAX_PANELS, settings.panelCount) : settings.panelCount,
+        layout: source === 'forge' ? valueOf(root, '#bbcf-draft-layout') : settings.layout,
+        stylePreset: source === 'forge' ? valueOf(root, '#bbcf-draft-style') : settings.stylePreset,
+        characterLock: source === 'forge' ? valueOf(root, '#bbcf-draft-lock') : settings.characterLock,
+        panelNotes: source === 'forge' ? valueOf(root, '#bbcf-draft-notes') : settings.defaultPanelNotes,
+        bubbles: source === 'forge' ? valueOf(root, '#bbcf-draft-bubbles') : settings.defaultBubbles,
+        inserts: source === 'forge' ? valueOf(root, '#bbcf-draft-inserts') : settings.defaultInserts,
+        sfx: source === 'forge' ? valueOf(root, '#bbcf-draft-sfx') : settings.defaultSfx,
+        customPrompt: source === 'forge' ? valueOf(root, '#bbcf-draft-custom-style') : String(settings.customPrompt || ''),
+        negativePrompt: source === 'forge' ? valueOf(root, '#bbcf-draft-negative') : String(settings.negativePrompt || ''),
+    };
+    if (existingIndex >= 0) settings.draftPromptPresets[existingIndex] = preset;
+    else settings.draftPromptPresets.unshift(preset);
+    settings.activeDraftPromptPresetId = preset.id;
+    saveSettings();
+    syncDraftPromptPresetUi({ forceName: true });
+    toastr.success(existingIndex >= 0 ? 'Набор черновика обновлён.' : 'Набор черновика сохранён.', 'Comic Forge');
+}
+
+function deleteDraftPromptPreset(root = null) {
+    const settings = getSettings();
+    const selectedId = settings.activeDraftPromptPresetId
+        || String(root?.querySelector('#bbcf-draft-prompt-preset, #bbcf-forge-draft-prompt-preset')?.value || '');
+    const preset = settings.draftPromptPresets.find(item => item.id === selectedId);
+    if (!preset) return;
+    if (!window.confirm(`Удалить набор черновика "${preset.label}"?`)) return;
+    settings.draftPromptPresets = settings.draftPromptPresets.filter(item => item.id !== selectedId);
+    settings.activeDraftPromptPresetId = '';
+    saveSettings();
+    syncDraftPromptPresetUi({ forceName: true });
+    toastr.success('Набор черновика удалён.', 'Comic Forge');
 }
 
 function option(value, selected, label = value) {
@@ -1907,6 +2285,26 @@ function getKnownModelsForProvider(apiType) {
 
 function buildDraftModelOptionsHtml(settings) {
     return getDraftModelSuggestions(settings).map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
+}
+
+function buildDraftConnectionProfileOptionsHtml(settings, selected = settings.activeDraftConnectionProfileId) {
+    const current = option('', selected, 'Текущие настройки');
+    const saved = settings.draftConnectionProfiles.map(profile => option(profile.id, selected, profile.label)).join('');
+    return `${current}${saved}`;
+}
+
+function getActiveDraftConnectionProfile(settings = getSettings()) {
+    return settings.draftConnectionProfiles.find(profile => profile.id === settings.activeDraftConnectionProfileId) || null;
+}
+
+function buildDraftPromptPresetOptionsHtml(settings, selected = settings.activeDraftPromptPresetId) {
+    const current = option('', selected, 'Текущий черновик');
+    const saved = settings.draftPromptPresets.map(preset => option(preset.id, selected, preset.label)).join('');
+    return `${current}${saved}`;
+}
+
+function getActiveDraftPromptPreset(settings = getSettings()) {
+    return settings.draftPromptPresets.find(preset => preset.id === settings.activeDraftPromptPresetId) || null;
 }
 
 function getDraftModelSuggestions(settings = getSettings()) {
@@ -2241,6 +2639,7 @@ async function loadDraftModels({ button = null, silent = false } = {}) {
         if (!settings.draftModel && settings.availableDraftModels.length) settings.draftModel = settings.availableDraftModels[0];
         saveSettings();
         syncDraftConnectionRows();
+        syncDraftConnectionProfileUi();
         if (!silent) {
             const message = settings.availableDraftModels.length
                 ? `Черновик подключён. Моделей: ${settings.availableDraftModels.length}.`
@@ -2429,6 +2828,7 @@ function openForgeModal(options = {}) {
     const startMinimized = options?.minimized === true;
     const settings = getSettings();
     const savedDraft = getSavedDraft(settings);
+    const activeDraftPromptPreset = getActiveDraftPromptPreset(settings);
     const root = document.createElement('div');
     root.id = MODAL_ID;
     root.className = 'bbcf-modal-root';
@@ -2535,6 +2935,22 @@ function openForgeModal(options = {}) {
                         <label for="bbcf-draft-sfx">SFX: panel | text</label>
                         <textarea id="bbcf-draft-sfx" class="text_pole" rows="2" placeholder="3|БАХ">${escapeHtml(savedDraft.sfx)}</textarea>
                     </div>
+                    <div class="bbcf-compact-tools">
+                        <div class="bbcf-field">
+                            <label for="bbcf-forge-draft-prompt-preset">Набор черновика</label>
+                            <select id="bbcf-forge-draft-prompt-preset" class="text_pole">
+                                ${buildDraftPromptPresetOptionsHtml(settings)}
+                            </select>
+                        </div>
+                        <div class="bbcf-field">
+                            <label for="bbcf-forge-draft-prompt-preset-name">Название набора</label>
+                            <input id="bbcf-forge-draft-prompt-preset-name" class="text_pole" type="text" value="${escapeHtml(activeDraftPromptPreset?.label || '')}" placeholder="Например: нежная акварель">
+                        </div>
+                        <div class="bbcf-compact-actions">
+                            <button class="menu_button" type="button" id="bbcf-forge-save-draft-prompt-preset"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>
+                            <button class="menu_button bbcf-danger" type="button" id="bbcf-forge-delete-draft-prompt-preset" ${activeDraftPromptPreset ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить</span></button>
+                        </div>
+                    </div>
                     <div class="bbcf-field">
                         <label for="bbcf-draft-custom-style">Дополнительные инструкции к генерации</label>
                         <textarea id="bbcf-draft-custom-style" class="text_pole" rows="3" placeholder="Разовые правки поверх выбранного стиля: свет, ракурс, темп, материалы.">${escapeHtml(savedDraft.customPrompt)}</textarea>
@@ -2588,11 +3004,15 @@ function openForgeModal(options = {}) {
     });
     root.querySelector('#bbcf-draft-save-style')?.addEventListener('click', () => saveStyleFromDraft(root));
     root.querySelector('#bbcf-draft-save-layout')?.addEventListener('click', () => saveLayoutFromDraft(root));
+    root.querySelector('#bbcf-forge-draft-prompt-preset')?.addEventListener('change', () => applyDraftPromptPreset(root, { source: 'forge' }));
+    root.querySelector('#bbcf-forge-save-draft-prompt-preset')?.addEventListener('click', () => saveDraftPromptPreset(root, { source: 'forge' }));
+    root.querySelector('#bbcf-forge-delete-draft-prompt-preset')?.addEventListener('click', () => deleteDraftPromptPreset(root));
     bindPresetDeleteActions(root);
     root.querySelector('#bbcf-draft-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         await handleGenerateFromModal(root);
     });
+    syncDraftPromptPresetUi();
     if (startMinimized) {
         root.classList.add('bbcf-minimized');
         state.modalMinimized = true;
@@ -2697,6 +3117,73 @@ async function handleGenerateFromModal(root) {
     }
 }
 
+function getDraftDefaultValue(field, settings = getSettings()) {
+    if (field === 'panelCount') return clampInt(settings.panelCount, 1, MAX_PANELS, DEFAULT_SETTINGS.panelCount);
+    if (field === 'generationMode') return ['panels', 'single'].includes(settings.generationMode) ? settings.generationMode : DEFAULT_SETTINGS.generationMode;
+    if (field === 'insertMode') return ['new', 'append_last'].includes(settings.insertMode) ? settings.insertMode : DEFAULT_SETTINGS.insertMode;
+    if (field === 'layout') return getLayoutPresetById(settings.layout, settings) ? settings.layout : DEFAULT_SETTINGS.layout;
+    if (field === 'stylePreset') return getStylePresetById(settings.stylePreset, settings) ? settings.stylePreset : DEFAULT_SETTINGS.stylePreset;
+    if (field === 'characterLock') return String(settings.characterLock || '');
+    if (field === 'panelNotes') return String(settings.defaultPanelNotes || '');
+    if (field === 'bubbles') return String(settings.defaultBubbles || '');
+    if (field === 'inserts') return String(settings.defaultInserts || '');
+    if (field === 'sfx') return String(settings.defaultSfx || '');
+    if (field === 'customPrompt') return String(settings.customPrompt || '');
+    if (field === 'negativePrompt') return String(settings.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT);
+    return settings[field];
+}
+
+function normalizeDraftSyncValue(field, value, settings = getSettings()) {
+    if (field === 'panelCount') return String(clampInt(value, 1, MAX_PANELS, getDraftDefaultValue(field, settings)));
+    return String(value ?? '');
+}
+
+function draftSyncValuesEqual(field, value, defaultValue, settings = getSettings()) {
+    return normalizeDraftSyncValue(field, value, settings) === normalizeDraftSyncValue(field, defaultValue, settings);
+}
+
+function inferDraftManualFields(rawDraft, settings = getSettings()) {
+    if (!rawDraft || typeof rawDraft !== 'object') return [];
+    return DRAFT_SYNC_FIELDS.filter(field =>
+        Object.hasOwn(rawDraft, field)
+        && !draftSyncValuesEqual(field, rawDraft[field], getDraftDefaultValue(field, settings), settings));
+}
+
+function getDraftManualFields(rawDraft, settings = getSettings()) {
+    const rawFields = Array.isArray(rawDraft?.manualFields) ? rawDraft.manualFields : null;
+    const fields = rawFields || inferDraftManualFields(rawDraft, settings);
+    return uniqueStrings(fields).filter(field => DRAFT_SYNC_FIELDS.includes(field));
+}
+
+function getDraftSyncFieldForInput(input) {
+    if (!(input instanceof HTMLElement)) return '';
+    return Object.entries(DRAFT_SYNC_SELECTORS).find(([, selector]) => input.matches(selector))?.[0] || '';
+}
+
+function setDraftFieldControlValue(root, field, value) {
+    const selector = DRAFT_SYNC_SELECTORS[field];
+    if (!selector) return;
+    setValueSilent(root, selector, value);
+}
+
+function syncDefaultDraftField(field) {
+    syncDefaultDraftFields([field]);
+}
+
+function syncDefaultDraftFields(fields = DRAFT_SYNC_FIELDS) {
+    const root = state.modal?.isConnected ? state.modal : null;
+    if (!root || state.generating) return;
+    const settings = getSettings();
+    const manualFields = new Set(getDraftManualFields(settings.savedDraft || {}, settings));
+    let changed = false;
+    for (const field of fields) {
+        if (!DRAFT_SYNC_FIELDS.includes(field) || manualFields.has(field)) continue;
+        setDraftFieldControlValue(root, field, getDraftDefaultValue(field, settings));
+        changed = true;
+    }
+    if (changed) saveDraftFromModal(root);
+}
+
 function readDraftFromModal(root) {
     return {
         title: valueOf(root, '#bbcf-draft-title') || 'Comic page',
@@ -2719,22 +3206,26 @@ function readDraftFromModal(root) {
 
 function getSavedDraft(settings = getSettings()) {
     const raw = settings.savedDraft && typeof settings.savedDraft === 'object' ? settings.savedDraft : {};
+    const manualFields = getDraftManualFields(raw, settings);
+    const manual = new Set(manualFields);
+    const synced = field => manual.has(field) ? raw[field] : getDraftDefaultValue(field, settings);
     return {
         title: String(raw.title || 'Comic page'),
-        generationMode: ['panels', 'single'].includes(raw.generationMode) ? raw.generationMode : settings.generationMode,
+        generationMode: ['panels', 'single'].includes(synced('generationMode')) ? synced('generationMode') : settings.generationMode,
         bubbleMode: 'model',
-        insertMode: ['new', 'append_last'].includes(raw.insertMode) ? raw.insertMode : settings.insertMode,
-        panelCount: clampInt(raw.panelCount, 1, MAX_PANELS, settings.panelCount),
-        layout: getLayoutPresetById(raw.layout, settings) ? raw.layout : settings.layout,
-        stylePreset: getStylePresetById(raw.stylePreset, settings) ? raw.stylePreset : settings.stylePreset,
+        insertMode: ['new', 'append_last'].includes(synced('insertMode')) ? synced('insertMode') : settings.insertMode,
+        panelCount: clampInt(synced('panelCount'), 1, MAX_PANELS, settings.panelCount),
+        layout: getLayoutPresetById(synced('layout'), settings) ? synced('layout') : settings.layout,
+        stylePreset: getStylePresetById(synced('stylePreset'), settings) ? synced('stylePreset') : settings.stylePreset,
         scene: String(raw.scene || ''),
-        characterLock: String(raw.characterLock ?? settings.characterLock ?? ''),
-        panelNotes: String(raw.panelNotes || ''),
-        bubbles: String(raw.bubbles || ''),
-        inserts: String(raw.inserts || ''),
-        sfx: String(raw.sfx || ''),
-        customPrompt: String(raw.customPrompt ?? raw.customStyle ?? settings.customPrompt ?? settings.customStyle ?? ''),
-        negativePrompt: settings.negativePrompt,
+        characterLock: String(synced('characterLock') ?? settings.characterLock ?? ''),
+        panelNotes: String(synced('panelNotes') || ''),
+        bubbles: String(synced('bubbles') || ''),
+        inserts: String(synced('inserts') || ''),
+        sfx: String(synced('sfx') || ''),
+        customPrompt: String(manual.has('customPrompt') ? (raw.customPrompt ?? raw.customStyle ?? '') : settings.customPrompt ?? settings.customStyle ?? ''),
+        negativePrompt: String(manual.has('negativePrompt') ? (raw.negativePrompt ?? '') : settings.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT),
+        manualFields,
     };
 }
 
@@ -2757,8 +3248,14 @@ function applySavedDraftToModal(root, draft) {
     setValueSilent(root, '#bbcf-draft-negative', draft.negativePrompt ?? getSettings().negativePrompt);
 }
 
-function saveDraftToSettings(draft) {
+function saveDraftToSettings(draft, { manualField = '', manualFields = [], replaceManualFields = null } = {}) {
     const settings = getSettings();
+    const profileKey = getSavedDraftProfileKey();
+    const previousDraft = normalizeSavedDraft(settings.savedDraftProfiles?.[profileKey] || settings.savedDraft) || {};
+    const nextManualFields = new Set(Array.isArray(replaceManualFields) ? replaceManualFields : getDraftManualFields(previousDraft, settings));
+    for (const field of [manualField, ...manualFields]) {
+        if (DRAFT_SYNC_FIELDS.includes(field)) nextManualFields.add(field);
+    }
     settings.savedDraft = {
         title: String(draft.title || 'Comic page'),
         generationMode: ['panels', 'single'].includes(draft.generationMode) ? draft.generationMode : settings.generationMode,
@@ -2775,16 +3272,17 @@ function saveDraftToSettings(draft) {
         sfx: String(draft.sfx || ''),
         customPrompt: String(draft.customPrompt ?? draft.customStyle ?? ''),
         negativePrompt: String(draft.negativePrompt ?? ''),
+        manualFields: [...nextManualFields],
     };
-    settings.savedDraftProfiles[getSavedDraftProfileKey()] = structuredClone(settings.savedDraft);
-    settings.activeSavedDraftProfileKey = getSavedDraftProfileKey();
+    settings.savedDraftProfiles[profileKey] = structuredClone(settings.savedDraft);
+    settings.activeSavedDraftProfileKey = profileKey;
     saveSettings();
 }
 
-function saveDraftFromModal(root) {
+function saveDraftFromModal(root, options = {}) {
     if (!root?.isConnected) return;
     try {
-        saveDraftToSettings(readDraftFromModal(root));
+        saveDraftToSettings(readDraftFromModal(root), options);
     } catch (error) {
         console.warn('[BB Comic Forge] draft autosave failed', error);
     }
@@ -2795,7 +3293,8 @@ function bindDraftPersistence(root) {
     if (!form) return;
     const persist = event => {
         normalizeDraftNumberInput(event?.target);
-        saveDraftFromModal(root);
+        const manualField = getDraftSyncFieldForInput(event?.target);
+        saveDraftFromModal(root, { manualField });
     };
     form.addEventListener('input', persist);
     form.addEventListener('change', persist);
@@ -3119,14 +3618,19 @@ function setValueSilent(root, selector, value) {
 
 function applyDefaultPageSettingsToModal(root) {
     const settings = getSettings();
-    setValue(root, '#bbcf-draft-mode', settings.generationMode);
-    setValue(root, '#bbcf-draft-count', settings.panelCount);
-    setValue(root, '#bbcf-draft-layout', settings.layout);
-    setValue(root, '#bbcf-draft-style', settings.stylePreset);
-    setValue(root, '#bbcf-draft-insert-mode', settings.insertMode);
-    setValue(root, '#bbcf-draft-lock', settings.characterLock);
-    setValue(root, '#bbcf-draft-custom-style', settings.customPrompt);
-    setValue(root, '#bbcf-draft-negative', settings.negativePrompt);
+    setValueSilent(root, '#bbcf-draft-mode', settings.generationMode);
+    setValueSilent(root, '#bbcf-draft-count', settings.panelCount);
+    setValueSilent(root, '#bbcf-draft-layout', settings.layout);
+    setValueSilent(root, '#bbcf-draft-style', settings.stylePreset);
+    setValueSilent(root, '#bbcf-draft-insert-mode', settings.insertMode);
+    setValueSilent(root, '#bbcf-draft-lock', settings.characterLock);
+    setValueSilent(root, '#bbcf-draft-notes', settings.defaultPanelNotes);
+    setValueSilent(root, '#bbcf-draft-bubbles', settings.defaultBubbles);
+    setValueSilent(root, '#bbcf-draft-inserts', settings.defaultInserts);
+    setValueSilent(root, '#bbcf-draft-sfx', settings.defaultSfx);
+    setValueSilent(root, '#bbcf-draft-custom-style', settings.customPrompt);
+    setValueSilent(root, '#bbcf-draft-negative', settings.negativePrompt);
+    saveDraftFromModal(root, { replaceManualFields: [] });
 }
 
 function valueOf(root, selector) {
@@ -4384,7 +4888,7 @@ function getPanelColumnSpan(layout, number = 1) {
 }
 
 function panelImageStyle() {
-    return 'display:block; width:100%; height:auto; max-width:100%; min-width:0; border:0; object-fit:contain; object-position:center; box-sizing:border-box;';
+    return 'display:block !important; width:100% !important; height:auto !important; max-width:none !important; max-height:none !important; min-width:100% !important; min-height:0; margin:0 !important; padding:0 !important; border:0; object-fit:contain !important; object-position:center !important; box-sizing:border-box;';
 }
 
 function bubbleStyle(bubble, index) {
@@ -5212,35 +5716,34 @@ function getSavedDraftProfileKey() {
     return getScopedProfileKey();
 }
 
-function getLegacyReferenceProfileKey() {
-    const context = SillyTavern.getContext();
-    const character = context.characterId !== undefined ? context.characters?.[context.characterId] : null;
-    const name = character?.name || context.name2 || 'global';
-    const id = context.characterId !== undefined ? context.characterId : safeFilename(name).toLowerCase();
-    return `character:${id}:${String(name || 'global').trim().toLowerCase()}`;
-}
-
 function getScopedProfileKey() {
     const context = SillyTavern.getContext();
     const groupId = context.groupId ?? context.group_id ?? context.selected_group;
-    if (groupId !== undefined && groupId !== null && groupId !== '') {
-        const group = Array.isArray(context.groups) ? context.groups.find(item => String(item?.id) === String(groupId)) : null;
-        return `group:${safeProfilePart(groupId)}:${safeProfilePart(group?.name || context.name2 || 'group')}`;
-    }
+    const group = groupId !== undefined && groupId !== null && groupId !== ''
+        ? (Array.isArray(context.groups) ? context.groups.find(item => String(item?.id) === String(groupId)) : null)
+        : null;
     const character = context.characterId !== undefined ? context.characters?.[context.characterId] : null;
-    if (character) {
-        const stableId = character.avatar || character.name || context.characterId;
-        return `character:${safeProfilePart(stableId)}:${safeProfilePart(character.name || context.name2 || 'character')}`;
-    }
     const chatId = context.chatId
         || context.chat_id
         || context.chatMetadata?.chat_id
         || context.chatMetadata?.file_name
         || context.chatMetadata?.chat_name
-        || context.chatMetadata?.name
-        || context.name2
-        || 'global';
-    return `chat:${safeProfilePart(chatId)}`;
+        || context.chatMetadata?.name;
+    if (chatId !== undefined && chatId !== null && chatId !== '') {
+        const ownerId = groupId !== undefined && groupId !== null && groupId !== ''
+            ? `group:${groupId}`
+            : `character:${character?.avatar || character?.name || context.characterId || context.name2 || 'global'}`;
+        const ownerName = group?.name || character?.name || context.name2 || 'chat';
+        return `chat:${safeProfilePart(ownerId)}:${safeProfilePart(ownerName)}:${safeProfilePart(chatId)}`;
+    }
+    if (groupId !== undefined && groupId !== null && groupId !== '') {
+        return `group:${safeProfilePart(groupId)}:${safeProfilePart(group?.name || context.name2 || 'group')}`;
+    }
+    if (character) {
+        const stableId = character.avatar || character.name || context.characterId;
+        return `character:${safeProfilePart(stableId)}:${safeProfilePart(character.name || context.name2 || 'character')}`;
+    }
+    return `chat:global:${safeProfilePart(context.name2 || 'global')}`;
 }
 
 function safeProfilePart(value) {

@@ -69,9 +69,9 @@
 
 #bbcf-settings .bbcf-row {
     display: grid;
-    grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 4px;
 }
 
 #bbcf-settings .bbcf-row label {
@@ -94,14 +94,14 @@
 
 #bbcf-settings .bbcf-model-picker {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
     gap: 8px;
     min-width: 0;
 }
 
 #bbcf-settings .bbcf-ref-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: 1fr;
     gap: 8px;
 }
 
@@ -725,7 +725,7 @@
 
 .bbcf-modal {
     position: relative;
-    width: min(1180px, calc(100vw - 36px));
+    width: min(860px, calc(100vw - 36px));
     max-width: 100%;
     max-height: calc(100dvh - 36px);
     display: grid;
@@ -803,23 +803,25 @@
 }
 
 .bbcf-modal-body {
-    display: grid;
-    grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+    display: block;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .bbcf-form {
     min-height: 0;
-    overflow: auto;
+    max-height: none;
+    overflow: visible;
     padding: 14px;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     background: #11151d;
 }
 
 .bbcf-preview {
-    min-height: 0;
-    overflow: auto;
+    min-height: 42vh;
+    overflow: visible;
     padding: 14px;
     background: #090b10;
 }
@@ -829,7 +831,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin: -14px -14px 12px;
+    margin: 0 0 12px;
     padding: 12px 14px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(9, 11, 16, 0.96);
@@ -977,7 +979,7 @@
 
 .bbcf-inline-actions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
     gap: 8px;
     align-items: center;
     margin-top: 8px;
@@ -1096,7 +1098,7 @@
 
 .bbcf-preset-save-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 10px;
 }
 
@@ -1129,9 +1131,62 @@
     resize: vertical;
 }
 
+.bbcf-compact-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
+    min-width: 0;
+    margin: 8px 0 12px;
+}
+
+.bbcf-compact-tools .bbcf-row,
+.bbcf-compact-tools .bbcf-field {
+    flex: 1 1 100%;
+    margin: 0;
+    min-width: 0;
+}
+
+#bbcf-settings .bbcf-compact-tools .bbcf-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+    row-gap: 4px;
+}
+
+.bbcf-compact-tools select,
+.bbcf-compact-tools input {
+    min-width: 0;
+    text-overflow: ellipsis;
+}
+
+.bbcf-compact-actions {
+    display: flex;
+    flex-wrap: wrap;
+    flex: 1 0 100%;
+    gap: 6px;
+    justify-content: stretch;
+    min-width: 0;
+    order: -1;
+}
+
+.bbcf-compact-actions .menu_button {
+    flex: 1 1 140px;
+    justify-content: center;
+    min-width: 0;
+}
+
+.bbcf-compact-actions .menu_button i {
+    width: auto;
+    height: auto;
+    padding: 0;
+    border: 0;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
 .bbcf-grid-2 {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 10px;
 }
 
@@ -1362,17 +1417,28 @@ comics {
     box-sizing: border-box;
 }
 
+.bbcf-comics-artifact .bbcf-panel {
+    line-height: 0 !important;
+}
+
 .bbcf-panel:not(.bbcf-panel-error) {
     border: 3px solid var(--bbcf-frame) !important;
     background: #fffaf0 !important;
 }
 
-.bbcf-panel img {
+.bbcf-panel img,
+.bbcf-comics-artifact .bbcf-panel > img,
+#chat .bbcf-comics-artifact .bbcf-panel > img,
+.mes .bbcf-comics-artifact .bbcf-panel > img {
     display: block;
     width: 100% !important;
     height: auto !important;
-    max-width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-width: 100% !important;
     min-height: 0;
+    margin: 0 !important;
+    padding: 0 !important;
     object-fit: contain !important;
     object-position: center !important;
     box-sizing: border-box;
@@ -1574,6 +1640,20 @@ comics {
 
     .bbcf-toolbar .menu_button {
         flex: 1 1 180px;
+    }
+
+    .bbcf-compact-actions {
+        justify-content: stretch;
+    }
+
+    .bbcf-compact-tools .bbcf-row,
+    .bbcf-compact-tools .bbcf-field {
+        flex-basis: 100%;
+    }
+
+    .bbcf-compact-actions .menu_button {
+        flex: 1 1 140px;
+        justify-content: center;
     }
 
     .bbcf-preview-actions .menu_button {
