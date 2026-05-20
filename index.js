@@ -1526,8 +1526,8 @@ function bindReferenceSettings(root) {
             try {
                 const dataUrl = await readFileAsDataUrl(file);
                 const path = await saveReferenceImageToFile(dataUrl, id);
-                updateReference(id, { path });
-                refreshSettingsUi();
+                const ref = updateReference(id, { path });
+                syncReferenceCard(card, ref);
                 toastr.success('Референс сохранен.', 'Comic Forge');
             } catch (error) {
                 console.error('[BB Comic Forge] reference upload failed', error);
@@ -1537,8 +1537,8 @@ function bindReferenceSettings(root) {
             }
         });
         card.querySelector('.bbcf-ref-clear')?.addEventListener('click', () => {
-            updateReference(id, { path: '' });
-            refreshSettingsUi();
+            const ref = updateReference(id, { path: '' });
+            syncReferenceCard(card, ref);
             toastr.info('Референс очищен.', 'Comic Forge');
         });
         card.querySelector('.bbcf-ref-enabled')?.addEventListener('change', event => {
@@ -1551,6 +1551,19 @@ function bindReferenceSettings(root) {
             updateReference(id, { description: String(event.target.value || '') });
         });
     });
+}
+
+function syncReferenceCard(card, ref) {
+    if (!card || !ref) return;
+    const thumb = card.querySelector('.bbcf-ref-thumb');
+    if (thumb) {
+        thumb.classList.toggle('has-image', Boolean(ref.path));
+        thumb.innerHTML = ref.path
+            ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}">`
+            : '<i class="fa-solid fa-user"></i>';
+    }
+    const clearButton = card.querySelector('.bbcf-ref-clear');
+    if (clearButton) clearButton.disabled = !ref.path;
 }
 
 function bindWardrobeModalEvents(root) {
@@ -1672,10 +1685,11 @@ function bindWardrobeEditor(root) {
 function updateReference(id, patch) {
     const settings = getSettings();
     const ref = settings.references.find(item => item.id === id);
-    if (!ref) return;
+    if (!ref) return null;
     Object.assign(ref, patch);
     settings.referenceProfiles[getReferenceProfileKey()] = structuredClone(settings.references);
     saveSettings();
+    return ref;
 }
 
 function updateWardrobeItem(id, patch) {
@@ -4949,7 +4963,7 @@ async function insertComicIntoChat(html, mode = 'new', targetMessageId = null) {
     const context = SillyTavern.getContext();
     if (!Array.isArray(context.chat)) throw new Error('Чат не открыт.');
     if (mode === 'append_last' && context.chat.length) {
-        const messageId = Number.isInteger(targetMessageId) ? targetMessageId : context.chat.length - 1;
+        const messageId = Number.isInteger(targetMessageId) ? targetMessageId : findLastCharacterMessageId(context.chat);
         const message = context.chat[messageId];
         if (message && !message.is_user) {
             message.mes = `${String(message.mes || '').trim()}\n\n${html}`.trim();
@@ -4981,6 +4995,15 @@ async function insertComicIntoChat(html, mode = 'new', targetMessageId = null) {
     await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, messageId);
     await saveCurrentChat(context);
     return messageId;
+}
+
+function findLastCharacterMessageId(chat) {
+    if (!Array.isArray(chat)) return -1;
+    for (let index = chat.length - 1; index >= 0; index--) {
+        const message = chat[index];
+        if (message && !message.is_user) return index;
+    }
+    return chat.length - 1;
 }
 
 function rememberComic(draft, html, messageId = null) {
@@ -5123,9 +5146,10 @@ async function sendPendingComicToChat(root, { targetMessageId = null } = {}) {
         }
         const previewHtml = root.querySelector('#bbcf-preview-content')?.innerHTML || state.pendingComic.html;
         const html = makeShareHtml(previewHtml);
-        const insertMode = state.pendingComic.draft?.insertMode || getSettings().insertMode;
+        const currentDraft = readDraftFromModal(root);
+        const insertMode = currentDraft.insertMode || state.pendingComic.draft?.insertMode || getSettings().insertMode;
         const messageId = await insertComicIntoChat(html, insertMode, targetMessageId);
-        const record = rememberComic(state.pendingComic.draft || readDraftFromModal(root), html, messageId);
+        const record = rememberComic({ ...(state.pendingComic.draft || {}), ...currentDraft, insertMode }, html, messageId);
         state.lastComic = record;
         state.pendingComic = { ...state.pendingComic, html, sent: true };
         renderComicHistory(root);
