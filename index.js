@@ -243,6 +243,7 @@ const state = {
     generationAbortController: null,
     generationCancelRequested: false,
     generationCancelNotified: false,
+    generationRunId: 0,
     lastComic: null,
     pendingComic: null,
     wardrobeModal: null,
@@ -3062,6 +3063,7 @@ function minimizeForgeModal() {
 
 function startGenerationSession() {
     const controller = new AbortController();
+    controller.bbcfRunId = ++state.generationRunId;
     state.generationAbortController = controller;
     state.generationCancelRequested = false;
     state.generationCancelNotified = false;
@@ -3087,6 +3089,11 @@ function cancelActiveGeneration() {
     }
 }
 
+function throwIfGenerationStale(controller) {
+    throwIfAborted(controller?.signal);
+    if (!controller || state.generationAbortController !== controller) throw createCancellationError();
+}
+
 async function handleGenerateFromModal(root) {
     if (state.generating) return;
     const draft = readDraftFromModal(root);
@@ -3107,6 +3114,7 @@ async function handleGenerateFromModal(root) {
             previewRoot: root.querySelector('#bbcf-preview-content'),
             signal: controller.signal,
         });
+        throwIfGenerationStale(controller);
         state.pendingComic = { draft, html: makeShareHtml(html), sent: false };
         attachForgePreviewPanelControls(root);
         updateSendToChatButton(root);
@@ -3481,6 +3489,7 @@ function extractJsonObject(raw) {
         text,
         ...extractCodeFenceBodies(text),
         findBalancedJsonObject(text),
+        repairTruncatedJsonObject(text),
         text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1),
     ].filter(Boolean));
     for (const candidate of candidates) {
@@ -3530,6 +3539,42 @@ function findBalancedJsonObject(text) {
         }
     }
     return '';
+}
+
+function repairTruncatedJsonObject(text) {
+    const source = String(text || '');
+    const start = source.indexOf('{');
+    if (start === -1) return '';
+    let out = '';
+    const stack = [];
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < source.length; index++) {
+        const char = source[index];
+        out += char;
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (char === '\\') escaped = true;
+            else if (char === '"') inString = false;
+            continue;
+        }
+        if (char === '"') {
+            inString = true;
+        } else if (char === '{') {
+            stack.push('}');
+        } else if (char === '[') {
+            stack.push(']');
+        } else if (char === '}' || char === ']') {
+            const expected = stack[stack.length - 1];
+            if (char === expected) stack.pop();
+            if (!stack.length) return out;
+        }
+    }
+    if (!out || !stack.length) return '';
+    if (inString) out += '"';
+    out = out.replace(/,\s*$/, '');
+    while (stack.length) out += stack.pop();
+    return out;
 }
 
 function loosenDraftJson(text) {
@@ -5301,8 +5346,15 @@ function restoreCurrentPreview(root) {
 }
 
 function clearForgePreview(root) {
+    if (state.generating) {
+        const shouldCancel = window.confirm('Генерация уже идет. Отменить ее и очистить превью?');
+        if (!shouldCancel) return;
+        cancelActiveGeneration();
+    }
     const preview = root?.querySelector('#bbcf-preview-content');
     if (preview) preview.innerHTML = '<p class="bbcf-hint">Превью очищено.</p>';
+    const progress = root?.querySelector('#bbcf-progress');
+    if (progress) progress.innerHTML = '';
     state.pendingComic = null;
     setHistoryPreviewMode(root, false);
     updateSendToChatButton(root);
@@ -5360,14 +5412,17 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
         try {
             const dataUrl = await generatePanelImage(plan, status => updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'running', status), controller.signal);
             stopTimer();
-            throwIfAborted(controller.signal);
+            throwIfGenerationStale(controller);
             updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'running', 'Сохранение');
             imagePath = await saveImageToFile(dataUrl, panelNumber, controller.signal);
+            throwIfGenerationStale(controller);
             updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'done', 'Готово');
         } catch (error) {
             stopTimer();
             throw error;
         }
+        throwIfGenerationStale(controller);
+        if (!root?.isConnected || !preview?.isConnected || !oldFigure?.isConnected) throw createCancellationError();
         oldFigure.outerHTML = buildPanelHtml({ ...plan, imagePath }).trim();
         cleanupRenderedComics(preview);
         bindComicActions(preview);
@@ -5382,12 +5437,14 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
         toastr.success(`Панель ${panelNumber} обновлена в превью.`, 'Comic Forge');
     } catch (error) {
         if (isAbortError(error) || state.generationCancelRequested) {
+            updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'error', 'Отменено');
             console.info('[BB Comic Forge] preview panel regeneration cancelled');
             if (!state.generationCancelNotified && root?.isConnected) {
                 toastr.info('Генерация отменена.', 'Comic Forge');
                 state.generationCancelNotified = true;
             }
         } else {
+            updateProgress(root.querySelector('#bbcf-progress'), panelNumber, 'error', error?.message || 'Ошибка');
             console.error('[BB Comic Forge] preview panel regeneration failed', error);
             toastr.error(error?.message || String(error), 'Comic Forge');
         }
