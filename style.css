@@ -1487,6 +1487,17 @@ comics {
     transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
+.bbcf-preview-panel-regen {
+    right: 8px;
+}
+
+.bbcf-preview-panel-delete {
+    right: 48px;
+    border-color: rgba(255, 104, 104, 0.48);
+    background: rgba(88, 24, 32, 0.72);
+    color: #ffdada;
+}
+
 .bbcf-panel:hover .bbcf-panel-action,
 .bbcf-panel:focus-within .bbcf-panel-action,
 .bbcf-panel-action.is-busy {

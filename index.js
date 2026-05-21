@@ -5365,24 +5365,68 @@ function attachForgePreviewPanelControls(root) {
     const preview = root?.querySelector('#bbcf-preview-content');
     if (!preview || !state.pendingComic?.html) return;
     preview.querySelectorAll('.bbcf-preview-panel-regen').forEach(button => button.remove());
+    preview.querySelectorAll('.bbcf-preview-panel-delete').forEach(button => button.remove());
     const draft = state.pendingComic.draft || readDraftFromModal(root);
     if ((draft.generationMode || getSettings().generationMode) === 'single') return;
     preview.querySelectorAll('.bbcf-panel').forEach(figure => {
         const number = Number(figure.getAttribute('data-bbcf-panel'));
-        if (!number || figure.querySelector('.bbcf-preview-panel-regen')) return;
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'bbcf-panel-action bbcf-preview-panel-regen';
-        button.title = 'Перегенерировать в текущем стиле кузницы';
-        button.dataset.bbcfPreviewRegen = String(number);
-        button.innerHTML = '<i class="fa-solid fa-palette"></i>';
-        button.addEventListener('click', async event => {
+        if (!number) return;
+        if (!figure.querySelector('.bbcf-preview-panel-regen')) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'bbcf-panel-action bbcf-preview-panel-regen';
+            button.title = 'Перегенерировать в текущем стиле кузницы';
+            button.dataset.bbcfPreviewRegen = String(number);
+            button.innerHTML = '<i class="fa-solid fa-palette"></i>';
+            button.addEventListener('click', async event => {
+                event.preventDefault();
+                event.stopPropagation();
+                await regeneratePreviewPanel(root, number, button);
+            });
+            figure.appendChild(button);
+        }
+        if (figure.querySelector('.bbcf-preview-panel-delete')) return;
+        const deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'bbcf-panel-action bbcf-preview-panel-delete';
+        deleteButton.title = 'Удалить панель из текущего превью';
+        deleteButton.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+        deleteButton.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
-            await regeneratePreviewPanel(root, number, button);
+            deletePreviewPanel(root, number);
         });
-        figure.appendChild(button);
+        figure.appendChild(deleteButton);
     });
+}
+
+function deletePreviewPanel(root, panelNumber) {
+    if (state.generating) {
+        toastr.info('Дождись окончания генерации или отмени её перед удалением панели.', 'Comic Forge');
+        return;
+    }
+    const preview = root?.querySelector('#bbcf-preview-content');
+    const figure = preview?.querySelector(`.bbcf-panel[data-bbcf-panel="${panelNumber}"]`);
+    if (!preview || !figure) return;
+    if (!window.confirm(`Удалить панель ${panelNumber} из текущего превью?`)) return;
+    figure.remove();
+    const remainingPanels = Array.from(preview.querySelectorAll('.bbcf-panel'));
+    if (!remainingPanels.length) {
+        preview.innerHTML = '<p class="bbcf-hint">Все панели удалены из превью.</p>';
+        state.pendingComic = null;
+    } else {
+        cleanupRenderedComics(preview);
+        bindComicActions(preview);
+        state.pendingComic = {
+            draft: state.pendingComic?.draft || readDraftFromModal(root),
+            html: makeShareHtml(preview.innerHTML),
+            sent: false,
+        };
+        attachForgePreviewPanelControls(root);
+    }
+    updateSendToChatButton(root);
+    updateFloatingButton();
+    toastr.info(`Панель ${panelNumber} удалена из текущего превью.`, 'Comic Forge');
 }
 
 async function regeneratePreviewPanel(root, panelNumber, button) {
@@ -5607,9 +5651,18 @@ function bindComicActions(root) {
     root.querySelectorAll('[data-bbcf-regen]').forEach(button => {
         if (button.dataset.bbcfBound === '1') return;
         button.dataset.bbcfBound = '1';
-        button.addEventListener('click', event => {
+        button.addEventListener('click', async event => {
             event.preventDefault();
             event.stopPropagation();
+            const forgeRoot = state.modal?.isConnected && state.modal.contains(button) ? state.modal : null;
+            const preview = forgeRoot?.querySelector('#bbcf-preview-content');
+            if (preview?.contains(button)) {
+                const panelNumber = Number(button.closest('.bbcf-panel')?.getAttribute('data-bbcf-panel'));
+                if (panelNumber) {
+                    await regeneratePreviewPanel(forgeRoot, panelNumber, button);
+                    return;
+                }
+            }
             regeneratePanel(button);
         });
     });
