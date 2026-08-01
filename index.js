@@ -7,6 +7,7 @@ import {
     updateMessageBlock,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
+import { ConnectionManagerRequestService } from '../../shared.js';
 
 const MODULE_NAME = 'BB-Comic-Forge';
 const SETTINGS_ID = 'bbcf-settings';
@@ -20,6 +21,7 @@ const ONLYSQ_IMAGEN_ENDPOINT = 'https://api.onlysq.ru/ai/imagen';
 const MAX_COMIC_HISTORY = 24;
 const MAX_PREVIOUS_CONTEXT_IMAGES = 3;
 const MAX_CONCURRENCY = 6;
+const DRAFT_PROFILE_MAX_TOKENS = 2048;
 const DRAFT_CONNECTION_MODES = ['sillytavern', 'openai-chat', 'gemini'];
 const DRAFT_SYNC_FIELDS = ['generationMode', 'insertMode', 'panelCount', 'layout', 'stylePreset', 'characterLock', 'panelNotes', 'bubbles', 'inserts', 'sfx', 'customPrompt', 'negativePrompt'];
 const DRAFT_SYNC_SELECTORS = {
@@ -155,6 +157,7 @@ const DEFAULT_SETTINGS = {
     draftModel: '',
     availableDraftModels: [],
     draftTemperature: 0.35,
+    draftTavernProfileId: '',
     draftConnectionProfiles: [],
     activeDraftConnectionProfileId: '',
     draftPromptPresets: [],
@@ -471,6 +474,7 @@ function getSettings() {
     if (!Array.isArray(settings.availableDraftModels)) settings.availableDraftModels = [];
     settings.availableDraftModels = filterDraftModelNames(settings.availableDraftModels, settings.draftConnectionMode);
     settings.draftTemperature = Math.max(0, Math.min(2, Number(settings.draftTemperature ?? DEFAULT_SETTINGS.draftTemperature) || 0));
+    settings.draftTavernProfileId = String(settings.draftTavernProfileId || '');
     settings.draftConnectionProfiles = normalizeDraftConnectionProfiles(settings.draftConnectionProfiles);
     if (!settings.draftConnectionProfiles.some(profile => profile.id === settings.activeDraftConnectionProfileId)) {
         settings.activeDraftConnectionProfileId = '';
@@ -680,6 +684,7 @@ function normalizeDraftConnectionProfiles(rawProfiles) {
                 draftModel: String(profile.draftModel || ''),
                 availableDraftModels,
                 draftTemperature: Math.max(0, Math.min(2, Number(profile.draftTemperature ?? DEFAULT_SETTINGS.draftTemperature) || 0)),
+                draftTavernProfileId: String(profile.draftTavernProfileId || profile.tavernProfileId || ''),
             };
         })
         .filter(profile => profile.id && profile.label)
@@ -689,7 +694,7 @@ function normalizeDraftConnectionProfiles(rawProfiles) {
 function getDraftConnectionProfileFallbackLabel(profile = {}, mode = DEFAULT_SETTINGS.draftConnectionMode) {
     const model = String(profile.draftModel || '').trim();
     if (model) return model;
-    if (mode === 'sillytavern') return 'SillyTavern';
+    if (mode === 'sillytavern') return getDraftTavernProfileLabel(profile.draftTavernProfileId || profile.tavernProfileId) || 'SillyTavern';
     if (mode === 'gemini') return 'Gemini draft';
     return 'OpenAI draft';
 }
@@ -973,6 +978,12 @@ function createSettingsUi() {
                                 ${option('gemini', settings.draftConnectionMode, 'Отдельный Gemini-compatible')}
                             </select>
                         </div>
+                        <div class="bbcf-row bbcf-draft-tavern-profile-row">
+                            <label for="bbcf-draft-tavern-profile">Профиль SillyTavern</label>
+                            <select id="bbcf-draft-tavern-profile" class="text_pole">
+                                ${buildDraftTavernProfileOptionsHtml(settings)}
+                            </select>
+                        </div>
                         <div class="bbcf-row bbcf-draft-connection-row">
                             <label for="bbcf-draft-model">Модель</label>
                             <input id="bbcf-draft-model" class="text_pole" type="text" list="bbcf-draft-model-options" value="${escapeHtml(settings.draftModel)}" placeholder="${escapeHtml(getDraftModelPlaceholder(settings.draftConnectionMode))}">
@@ -1217,6 +1228,7 @@ function bindSettingsUi(root) {
     bindSettingInput(root, '#bbcf-draft-api-key', 'draftApiKey');
     bindSettingInput(root, '#bbcf-draft-model', 'draftModel');
     bindSettingInput(root, '#bbcf-draft-temperature', 'draftTemperature');
+    bindSettingInput(root, '#bbcf-draft-tavern-profile', 'draftTavernProfileId', 'value', () => syncDraftConnectionRows());
     bindSettingInput(root, '#bbcf-endpoint', 'endpoint');
     bindSettingInput(root, '#bbcf-api-key', 'apiKey');
     bindSettingInput(root, '#bbcf-model', 'model');
@@ -2046,12 +2058,14 @@ function syncDraftConnectionRows() {
     if (!root) return;
     const external = settings.draftConnectionMode !== 'sillytavern';
     root.querySelectorAll('.bbcf-draft-connection-row').forEach(node => node.classList.toggle('bbcf-hidden', !external));
+    root.querySelectorAll('.bbcf-draft-tavern-profile-row').forEach(node => node.classList.toggle('bbcf-hidden', external));
     const endpoint = root.querySelector('#bbcf-draft-endpoint');
     if (endpoint) endpoint.placeholder = getDraftEndpointPlaceholder(settings.draftConnectionMode);
     const model = root.querySelector('#bbcf-draft-model');
     if (model) model.placeholder = getDraftModelPlaceholder(settings.draftConnectionMode);
     const datalist = root.querySelector('#bbcf-draft-model-options');
     if (datalist) datalist.innerHTML = buildDraftModelOptionsHtml(settings);
+    updateSelectOptions(root.querySelector('#bbcf-draft-tavern-profile'), buildDraftTavernProfileOptionsHtml(settings), settings.draftTavernProfileId);
     const note = root.querySelector('#bbcf-draft-connection-note');
     if (note) note.textContent = getDraftConnectionNote(settings.draftConnectionMode);
 }
@@ -2083,6 +2097,7 @@ function applyDraftConnectionProfile(root = document.getElementById(SETTINGS_ID)
     settings.draftModel = profile.draftModel;
     settings.availableDraftModels = filterDraftModelNames(profile.availableDraftModels, profile.draftConnectionMode);
     settings.draftTemperature = profile.draftTemperature;
+    settings.draftTavernProfileId = profile.draftTavernProfileId || '';
     settings.activeDraftConnectionProfileId = profile.id;
     saveSettings();
     setSettingsControlValue(root, '#bbcf-draft-connection-mode', settings.draftConnectionMode);
@@ -2090,6 +2105,7 @@ function applyDraftConnectionProfile(root = document.getElementById(SETTINGS_ID)
     setSettingsControlValue(root, '#bbcf-draft-api-key', settings.draftApiKey);
     setSettingsControlValue(root, '#bbcf-draft-model', settings.draftModel);
     setSettingsControlValue(root, '#bbcf-draft-temperature', settings.draftTemperature);
+    setSettingsControlValue(root, '#bbcf-draft-tavern-profile', settings.draftTavernProfileId);
     syncDraftConnectionRows();
     syncDraftConnectionProfileUi(root, { forceName: true });
     toastr.success('Профиль подключения применён.', 'Comic Forge');
@@ -2110,6 +2126,7 @@ function saveDraftConnectionProfile(root = document.getElementById(SETTINGS_ID))
         draftModel: settings.draftModel,
         availableDraftModels: filterDraftModelNames(settings.availableDraftModels, settings.draftConnectionMode),
         draftTemperature: settings.draftTemperature,
+        draftTavernProfileId: settings.draftTavernProfileId,
     };
     if (existingIndex >= 0) settings.draftConnectionProfiles[existingIndex] = profile;
     else settings.draftConnectionProfiles.unshift(profile);
@@ -2323,6 +2340,35 @@ function buildDraftConnectionProfileOptionsHtml(settings, selected = settings.ac
     return `${current}${saved}`;
 }
 
+function buildDraftTavernProfileOptionsHtml(settings, selected = settings.draftTavernProfileId) {
+    const profiles = getSupportedTavernDraftProfiles();
+    const current = option('', selected, 'Текущий профиль SillyTavern');
+    const missing = selected && !profiles.some(profile => profile.id === selected)
+        ? option(selected, selected, `Недоступный профиль: ${getDraftTavernProfileLabel(selected) || selected}`)
+        : '';
+    const saved = profiles.map(profile => option(profile.id, selected, profile.name || profile.id)).join('');
+    return `${current}${missing}${saved}`;
+}
+
+function getSupportedTavernDraftProfiles() {
+    try {
+        return ConnectionManagerRequestService.getSupportedProfiles();
+    } catch (error) {
+        return [];
+    }
+}
+
+function getDraftTavernProfileLabel(profileId) {
+    const id = String(profileId || '');
+    if (!id) return '';
+    try {
+        const profile = SillyTavern.getContext()?.extensionSettings?.connectionManager?.profiles?.find(item => item.id === id);
+        return profile?.name || '';
+    } catch (error) {
+        return '';
+    }
+}
+
 function getActiveDraftConnectionProfile(settings = getSettings()) {
     return settings.draftConnectionProfiles.find(profile => profile.id === settings.activeDraftConnectionProfileId) || null;
 }
@@ -2371,7 +2417,13 @@ function getProviderNote(apiType) {
 }
 
 function getDraftConnectionNote(mode) {
-    if (mode === 'sillytavern') return 'Используется текущая текстовая модель SillyTavern.';
+    if (mode === 'sillytavern') {
+        const profileId = getSettings().draftTavernProfileId;
+        const profile = profileId ? getSupportedTavernDraftProfiles().find(item => item.id === profileId) : null;
+        if (profile) return `Используется сохранённый профиль SillyTavern: ${profile.name || profile.id}.`;
+        if (profileId) return 'Выбранный профиль SillyTavern недоступен или не поддерживает текстовую генерацию.';
+        return 'Используется текущая текстовая модель SillyTavern.';
+    }
     if (mode === 'openai-chat') return 'OpenAI-compatible /chat/completions.';
     if (mode === 'gemini') return 'Gemini-compatible generateContent.';
     return '';
@@ -3418,10 +3470,39 @@ async function runDraftPrompt(prompt, signal = null) {
     const settings = getSettings();
     if (settings.draftConnectionMode === 'openai-chat') return runOpenAiDraftPrompt(prompt, settings, signal);
     if (settings.draftConnectionMode === 'gemini') return runGeminiDraftPrompt(prompt, settings, signal);
+    if (settings.draftTavernProfileId) return runTavernProfileDraftPrompt(prompt, settings, signal);
     throwIfAborted(signal);
     const result = await runQuietPrompt(prompt);
     throwIfAborted(signal);
     return result;
+}
+
+async function runTavernProfileDraftPrompt(prompt, settings, signal = null) {
+    const profileId = String(settings.draftTavernProfileId || '').trim();
+    const profile = getSupportedTavernDraftProfiles().find(item => item.id === profileId);
+    if (!profile) throw new Error('Профиль SillyTavern для черновика не найден или не поддерживается Connection Manager.');
+
+    try {
+        throwIfAborted(signal);
+        const response = await ConnectionManagerRequestService.sendRequest(
+            profile.id,
+            [
+                { role: 'system', content: 'Return only valid JSON. No markdown. No commentary.' },
+                { role: 'user', content: prompt },
+            ],
+            DRAFT_PROFILE_MAX_TOKENS,
+            { stream: false, signal, extractData: true, includePreset: true, includeInstruct: true },
+            { temperature: settings.draftTemperature },
+        );
+        throwIfAborted(signal);
+        const text = typeof response === 'string' ? response : response?.content;
+        if (!text) throw new Error('Профиль SillyTavern не вернул текст черновика.');
+        return text;
+    } catch (error) {
+        if (isAbortError(error) || isAbortError(error?.cause)) throw createCancellationError();
+        const cause = error?.cause;
+        throw new Error(cause?.message || error?.message || String(error));
+    }
 }
 
 async function runOpenAiDraftPrompt(prompt, settings, signal = null) {
@@ -3491,10 +3572,10 @@ async function runGeminiDraftPrompt(prompt, settings, signal = null) {
 async function runQuietPrompt(prompt) {
     const context = SillyTavern.getContext();
     if (typeof context.generateQuietPrompt === 'function') {
-        return context.generateQuietPrompt(prompt);
+        return context.generateQuietPrompt({ quietPrompt: prompt });
     }
     if (typeof window.generateQuietPrompt === 'function') {
-        return window.generateQuietPrompt(prompt);
+        return window.generateQuietPrompt({ quietPrompt: prompt });
     }
     throw new Error('generateQuietPrompt не найден в SillyTavern.');
 }
