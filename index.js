@@ -21,7 +21,6 @@ const ONLYSQ_IMAGEN_ENDPOINT = 'https://api.onlysq.ru/ai/imagen';
 const MAX_COMIC_HISTORY = 24;
 const MAX_PREVIOUS_CONTEXT_IMAGES = 3;
 const MAX_CONCURRENCY = 6;
-const DRAFT_PROFILE_MAX_TOKENS = 2048;
 const DRAFT_CONNECTION_MODES = ['sillytavern', 'openai-chat', 'gemini'];
 const DRAFT_SYNC_FIELDS = ['generationMode', 'insertMode', 'panelCount', 'layout', 'stylePreset', 'characterLock', 'panelNotes', 'bubbles', 'inserts', 'sfx', 'customPrompt', 'negativePrompt'];
 const DRAFT_SYNC_SELECTORS = {
@@ -3490,7 +3489,8 @@ async function runTavernProfileDraftPrompt(prompt, settings, signal = null) {
                 { role: 'system', content: 'Return only valid JSON. No markdown. No commentary.' },
                 { role: 'user', content: prompt },
             ],
-            DRAFT_PROFILE_MAX_TOKENS,
+            // Leave max_tokens unset; reasoning models can spend tokens before producing content.
+            undefined,
             { stream: false, signal, extractData: true, includePreset: true, includeInstruct: true },
             { temperature: settings.draftTemperature },
         );
