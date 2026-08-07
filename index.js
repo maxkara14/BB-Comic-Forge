@@ -5148,27 +5148,59 @@ function findLastCharacterMessageId(chat) {
     return chat.length - 1;
 }
 
-function rememberComic(draft, html, messageId = null) {
+function rememberComic(draft, html, options = {}) {
     const settings = getSettings();
     const profileKey = getScopedProfileKey();
     const cleanHtml = makeShareHtml(html);
     const imagePaths = extractImagePathsFromHtml(cleanHtml);
+    const {
+        historyId = '',
+        messageId = null,
+        savedPngPath = '',
+        source = '',
+    } = options && typeof options === 'object' ? options : { messageId: options };
+    const existingHistory = Array.isArray(settings.comicHistory) ? settings.comicHistory : [];
+    const existing = historyId ? existingHistory.find(record => record?.id === historyId) : null;
+    const nextSavedPngPath = savedPngPath || existing?.savedPngPath || '';
+    const nextMessageId = messageId ?? existing?.messageId ?? null;
     const record = {
-        id: makeId('bbcf-comic'),
+        id: existing?.id || historyId || makeId('bbcf-comic'),
         profileKey,
-        title: String(draft.title || 'Comic page'),
-        createdAt: new Date().toISOString(),
-        mode: draft.generationMode || settings.generationMode,
-        layout: draft.layout || settings.layout,
+        title: String(draft.title || existing?.title || 'Comic page'),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        mode: draft.generationMode || draft.mode || existing?.mode || settings.generationMode,
+        layout: draft.layout || existing?.layout || settings.layout,
         imagePaths,
         imageFolder: getCommonImageFolder(imagePaths),
         html: cleanHtml,
-        messageId,
+        messageId: nextMessageId,
+        savedPngPath: nextSavedPngPath,
+        source: getComicHistorySource({ ...existing, messageId: nextMessageId, savedPngPath: nextSavedPngPath, source }),
     };
-    settings.comicHistory = [record, ...(settings.comicHistory || [])].slice(0, MAX_COMIC_HISTORY);
+    settings.comicHistory = [record, ...existingHistory.filter(item => item?.id !== record.id)].slice(0, MAX_COMIC_HISTORY);
     state.lastComic = record;
     saveSettings();
     return record;
+}
+
+function getComicHistorySource(record) {
+    if (record?.messageId !== null && record?.messageId !== undefined && record?.savedPngPath) return 'chat-png';
+    if (record?.messageId !== null && record?.messageId !== undefined) return 'chat';
+    if (record?.savedPngPath) return 'png';
+    return record?.source || 'saved';
+}
+
+function getComicHistorySourceLabel(record) {
+    const source = getComicHistorySource(record);
+    if (source === 'chat-png') return 'Чат + PNG';
+    if (source === 'chat') return 'Чат';
+    if (source === 'png') return 'PNG';
+    return 'Сохранено';
+}
+
+function getComicHistoryThumbnail(record) {
+    return record?.savedPngPath || record?.imagePaths?.[0] || '';
 }
 
 function makeShareHtml(html) {
@@ -5291,9 +5323,12 @@ async function sendPendingComicToChat(root, { targetMessageId = null } = {}) {
         const currentDraft = readDraftFromModal(root);
         const insertMode = currentDraft.insertMode || state.pendingComic.draft?.insertMode || getSettings().insertMode;
         const messageId = await insertComicIntoChat(html, insertMode, targetMessageId);
-        const record = rememberComic({ ...(state.pendingComic.draft || {}), ...currentDraft, insertMode }, html, messageId);
+        const record = rememberComic({ ...(state.pendingComic.draft || {}), ...currentDraft, insertMode }, html, {
+            historyId: state.pendingComic.historyId,
+            messageId,
+        });
         state.lastComic = record;
-        state.pendingComic = { ...state.pendingComic, html, sent: true };
+        state.pendingComic = { ...state.pendingComic, html, sent: true, historyId: record.id };
         renderComicHistory(root);
         bindComicActions(document.getElementById('chat') || document.body);
         updateSendToChatButton(root);
@@ -5325,6 +5360,29 @@ async function savePreviewPageImage(root) {
         }
         const dataUrl = await renderComicPageToPng(page);
         const path = await saveImageToFile(dataUrl, 'page');
+        const previewHtml = root.querySelector('#bbcf-preview-content')?.innerHTML || state.pendingComic?.html || state.lastComic?.html || '';
+        const html = makeShareHtml(previewHtml);
+        const savingHistoryPreview = isHistoryPreviewMode(root);
+        const historyId = savingHistoryPreview
+            ? (state.lastComic?.id || '')
+            : (state.pendingComic?.historyId || '');
+        const draft = savingHistoryPreview
+            ? (state.lastComic || readDraftFromModal(root))
+            : (state.pendingComic?.draft || readDraftFromModal(root));
+        const record = rememberComic(draft, html, {
+            historyId,
+            savedPngPath: path,
+        });
+        if (!savingHistoryPreview && state.pendingComic?.html) {
+            state.pendingComic = {
+                ...state.pendingComic,
+                draft,
+                html,
+                historyId: record.id,
+                savedPngPath: path,
+            };
+        }
+        renderComicHistory(root);
         showSavedPageImageNotice(root, path);
         toastr.success('Полный комикс сохранён как PNG.', 'Comic Forge');
     } catch (error) {
@@ -5426,6 +5484,11 @@ function updateSendToChatButton(root) {
 
 function setHistoryPreviewMode(root, enabled) {
     root?.querySelector('#bbcf-close-history-preview')?.classList.toggle('bbcf-hidden', !enabled);
+}
+
+function isHistoryPreviewMode(root) {
+    const button = root?.querySelector('#bbcf-close-history-preview');
+    return Boolean(button && !button.classList.contains('bbcf-hidden'));
 }
 
 function restoreCurrentPreview(root) {
@@ -5616,19 +5679,23 @@ function renderComicHistory(root) {
             <b>Созданные комиксы</b>
             <button class="menu_button" type="button" data-bbcf-history-clear><i class="fa-solid fa-trash-can"></i><span>Очистить</span></button>
         </div>
-        ${history.map(record => `
+        ${history.map(record => {
+            const thumbnail = getComicHistoryThumbnail(record);
+            const sourceLabel = getComicHistorySourceLabel(record);
+            return `
         <div class="bbcf-history-card" data-bbcf-history-id="${escapeHtml(record.id)}">
-            <div class="bbcf-history-thumb">${record.imagePaths?.[0] ? `<img src="${escapeHtml(record.imagePaths[0])}" alt="">` : '<i class="fa-solid fa-image"></i>'}</div>
+            <div class="bbcf-history-thumb">${thumbnail ? `<img src="${escapeHtml(thumbnail)}" alt="">` : '<i class="fa-solid fa-image"></i>'}</div>
             <div class="bbcf-history-main">
                 <b>${escapeHtml(record.title || 'Comic page')}</b>
-                <span>${escapeHtml(formatComicDate(record.createdAt))} · ${escapeHtml(record.mode === 'single' ? 'одним запросом' : 'по панелям')}</span>
+                <span>${escapeHtml(formatComicDate(record.createdAt))} · ${escapeHtml(record.mode === 'single' ? 'одним запросом' : 'по панелям')} · ${escapeHtml(sourceLabel)}</span>
                 <div class="bbcf-history-actions">
                     <button class="menu_button" type="button" data-bbcf-history-preview><i class="fa-solid fa-eye"></i><span>Показать</span></button>
                     <button class="menu_button" type="button" data-bbcf-history-delete><i class="fa-solid fa-trash-can"></i></button>
                 </div>
             </div>
         </div>
-    `).join('')}`;
+    `;
+        }).join('')}`;
     panel.querySelector('[data-bbcf-history-clear]')?.addEventListener('click', () => {
         const settings = getSettings();
         const profileKey = getScopedProfileKey();
@@ -5648,6 +5715,7 @@ function renderComicHistory(root) {
                 preview.innerHTML = record.html;
                 cleanupRenderedComics(preview);
                 bindComicActions(preview);
+                if (record.savedPngPath) showSavedPageImageNotice(root, record.savedPngPath);
             }
             setHistoryPreviewMode(root, true);
             updateSendToChatButton(root);
