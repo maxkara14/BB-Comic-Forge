@@ -7,6 +7,7 @@ import {
     updateMessageBlock,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
+import { POPUP_TYPE, Popup } from '../../../popup.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
 
 const MODULE_NAME = 'BB-Comic-Forge';
@@ -22,6 +23,10 @@ const MAX_COMIC_HISTORY = 24;
 const MAX_PREVIOUS_CONTEXT_IMAGES = 3;
 const MAX_CONCURRENCY = 6;
 const DRAFT_CONNECTION_MODES = ['sillytavern', 'openai-chat', 'gemini'];
+const IMAGE_API_TYPES = ['onlysq-imagen', 'openai-images', 'openai-chat', 'gemini', 'naistera'];
+const OPENAI_IMAGE_SIZES = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
+const OPENAI_IMAGE_QUALITIES = ['standard', 'hd', 'high', 'medium', 'low'];
+const COMIC_PAGE_SELECTOR = '.bbcf-comic-page, .custom-bbcf-comic-page, [data-bbcf-page]';
 const DRAFT_SYNC_FIELDS = ['generationMode', 'insertMode', 'panelCount', 'layout', 'stylePreset', 'characterLock', 'panelNotes', 'bubbles', 'inserts', 'sfx', 'customPrompt', 'negativePrompt'];
 const DRAFT_SYNC_SELECTORS = {
     generationMode: '#bbcf-draft-mode',
@@ -121,6 +126,8 @@ const DEFAULT_SETTINGS = {
     apiKey: '',
     model: '',
     availableModels: [],
+    imageConnectionProfiles: [],
+    activeImageConnectionProfileId: '',
     openaiSize: '1024x1024',
     openaiQuality: 'standard',
     aspectRatio: 'auto',
@@ -248,6 +255,8 @@ const state = {
     generationRunId: 0,
     lastComic: null,
     pendingComic: null,
+    lightboxPopup: null,
+    historyPreviewPreviousPendingComic: null,
     wardrobeModal: null,
     wardrobeOwner: 'char',
     wardrobeCategory: 'all',
@@ -286,12 +295,13 @@ function bootstrapUi() {
     createSettingsUi();
     updateFloatingButton();
     cleanupRenderedComics(document.getElementById('chat') || document.body);
-    bindComicActions(document.getElementById('chat') || document.body);
+    scheduleComicActionRefresh();
     installChatObserver();
 }
 
 function handleCharacterMessageRendered(messageId, type = '') {
     cleanupRenderedComics(document.getElementById('chat') || document.body);
+    scheduleComicActionRefresh();
     void runAutoComicAfterMessage(messageId, type);
 }
 
@@ -426,7 +436,7 @@ function getSettings() {
     settings.wardrobeEnabled = settings.wardrobeEnabled !== false;
     settings.wardrobeSendDescription = settings.wardrobeSendDescription !== false;
     settings.wardrobeSendImages = settings.wardrobeSendImages !== false;
-    if (!['onlysq-imagen', 'openai-images', 'openai-chat', 'gemini', 'naistera'].includes(settings.apiType)) settings.apiType = DEFAULT_SETTINGS.apiType;
+    if (!IMAGE_API_TYPES.includes(settings.apiType)) settings.apiType = DEFAULT_SETTINGS.apiType;
     if (settings.apiType === 'openai-images' && String(settings.endpoint || '').includes('api.onlysq.ru')) {
         settings.apiType = 'onlysq-imagen';
         dirty = true;
@@ -439,6 +449,10 @@ function getSettings() {
     if (settings.apiType === 'onlysq-imagen' && !settings.model) {
         settings.model = 'flux';
         dirty = true;
+    }
+    settings.imageConnectionProfiles = normalizeImageConnectionProfiles(settings.imageConnectionProfiles);
+    if (!settings.imageConnectionProfiles.some(profile => profile.id === settings.activeImageConnectionProfileId)) {
+        settings.activeImageConnectionProfileId = '';
     }
     settings.savedStyles = normalizeSavedStyles(settings.savedStyles);
     settings.savedLayouts = normalizeSavedLayouts(settings.savedLayouts);
@@ -482,6 +496,8 @@ function getSettings() {
     if (!settings.draftPromptPresets.some(preset => preset.id === settings.activeDraftPromptPresetId)) {
         settings.activeDraftPromptPresetId = '';
     }
+    if (!OPENAI_IMAGE_SIZES.includes(settings.openaiSize)) settings.openaiSize = DEFAULT_SETTINGS.openaiSize;
+    if (!OPENAI_IMAGE_QUALITIES.includes(settings.openaiQuality)) settings.openaiQuality = DEFAULT_SETTINGS.openaiQuality;
     if (!VALID_IMAGE_SIZES.includes(settings.imageSize)) settings.imageSize = DEFAULT_SETTINGS.imageSize;
     if (!VALID_ASPECT_RATIOS.includes(settings.aspectRatio) && settings.aspectRatio !== 'auto') settings.aspectRatio = DEFAULT_SETTINGS.aspectRatio;
     if (!VALID_ASPECT_RATIOS.includes(settings.naisteraAspectRatio) && settings.naisteraAspectRatio !== 'auto') settings.naisteraAspectRatio = DEFAULT_SETTINGS.naisteraAspectRatio;
@@ -690,6 +706,55 @@ function normalizeDraftConnectionProfiles(rawProfiles) {
         .slice(0, 40);
 }
 
+function normalizeImageConnectionProfiles(rawProfiles) {
+    const profiles = Array.isArray(rawProfiles) ? rawProfiles : [];
+    return profiles
+        .filter(profile => profile && typeof profile === 'object')
+        .map(profile => {
+            const apiType = IMAGE_API_TYPES.includes(profile.apiType) ? profile.apiType : DEFAULT_SETTINGS.apiType;
+            const availableModels = filterModelNamesForProvider(Array.isArray(profile.availableModels) ? profile.availableModels : [], apiType);
+            const aspectRatio = VALID_ASPECT_RATIOS.includes(profile.aspectRatio) || profile.aspectRatio === 'auto'
+                ? profile.aspectRatio
+                : DEFAULT_SETTINGS.aspectRatio;
+            const naisteraAspectRatio = VALID_ASPECT_RATIOS.includes(profile.naisteraAspectRatio) || profile.naisteraAspectRatio === 'auto'
+                ? profile.naisteraAspectRatio
+                : DEFAULT_SETTINGS.naisteraAspectRatio;
+            return {
+                id: String(profile.id || makeId('image-connection')),
+                label: String(profile.label || profile.name || getImageConnectionProfileFallbackLabel(profile, apiType)).trim(),
+                apiType,
+                endpoint: String(profile.endpoint || ''),
+                apiKey: String(profile.apiKey || ''),
+                model: String(profile.model || ''),
+                availableModels,
+                openaiSize: OPENAI_IMAGE_SIZES.includes(profile.openaiSize) ? profile.openaiSize : DEFAULT_SETTINGS.openaiSize,
+                openaiQuality: OPENAI_IMAGE_QUALITIES.includes(profile.openaiQuality) ? profile.openaiQuality : DEFAULT_SETTINGS.openaiQuality,
+                aspectRatio,
+                imageSize: VALID_IMAGE_SIZES.includes(profile.imageSize) ? profile.imageSize : DEFAULT_SETTINGS.imageSize,
+                naisteraModel: String(profile.naisteraModel || DEFAULT_SETTINGS.naisteraModel),
+                naisteraAspectRatio,
+                naisteraPreset: String(profile.naisteraPreset || DEFAULT_SETTINGS.naisteraPreset),
+            };
+        })
+        .filter(profile => profile.id && profile.label)
+        .slice(0, 40);
+}
+
+function getImageConnectionProfileFallbackLabel(profile = {}, apiType = DEFAULT_SETTINGS.apiType) {
+    const model = String(profile.model || profile.naisteraModel || '').trim();
+    if (model) return model;
+    return getImageApiLabel(apiType);
+}
+
+function getImageApiLabel(apiType) {
+    if (apiType === 'onlysq-imagen') return 'OnlySQ ImaGen';
+    if (apiType === 'openai-images') return 'OpenAI Images';
+    if (apiType === 'openai-chat') return 'OpenAI Chat Images';
+    if (apiType === 'gemini') return 'Gemini';
+    if (apiType === 'naistera') return 'Naistera';
+    return 'Image API';
+}
+
 function getDraftConnectionProfileFallbackLabel(profile = {}, mode = DEFAULT_SETTINGS.draftConnectionMode) {
     const model = String(profile.draftModel || '').trim();
     if (model) return model;
@@ -842,6 +907,7 @@ function createSettingsUi() {
     const container = document.getElementById('extensions_settings');
     if (!container) return;
     const settings = getSettings();
+    const activeImageConnectionProfile = getActiveImageConnectionProfile(settings);
     const activeDraftConnectionProfile = getActiveDraftConnectionProfile(settings);
     const activeDraftPromptPreset = getActiveDraftPromptPreset(settings);
     const wrapper = document.createElement('div');
@@ -867,6 +933,22 @@ function createSettingsUi() {
                 <section class="bbcf-section">
                     <h4 class="bbcf-section-title"><i class="fa-solid fa-plug"></i> API генерации картинок</h4>
                     <p class="bbcf-hint bbcf-provider-note" id="bbcf-provider-note"></p>
+                    <div class="bbcf-compact-tools">
+                        <div class="bbcf-row">
+                            <label for="bbcf-image-connection-profile">Профиль подключения</label>
+                            <select id="bbcf-image-connection-profile" class="text_pole">
+                                ${buildImageConnectionProfileOptionsHtml(settings)}
+                            </select>
+                        </div>
+                        <div class="bbcf-row">
+                            <label for="bbcf-image-connection-profile-name">Название профиля</label>
+                            <input id="bbcf-image-connection-profile-name" class="text_pole" type="text" value="${escapeHtml(activeImageConnectionProfile?.label || '')}" placeholder="Например: Nano Banana refs">
+                        </div>
+                        <div class="bbcf-compact-actions">
+                            <button class="menu_button" type="button" id="bbcf-save-image-connection-profile"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>
+                            <button class="menu_button bbcf-danger" type="button" id="bbcf-delete-image-connection-profile" ${activeImageConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить</span></button>
+                        </div>
+                    </div>
                     <div class="bbcf-row">
                         <label for="bbcf-api-type">Тип API</label>
                         <select id="bbcf-api-type" class="text_pole">
@@ -1181,6 +1263,7 @@ function createSettingsUi() {
     container.appendChild(wrapper);
     bindSettingsUi(wrapper);
     syncProviderRows();
+    syncImageConnectionProfileUi(wrapper);
     syncDraftConnectionRows();
     syncDraftConnectionProfileUi(wrapper);
     syncDraftPromptPresetUi({ forceName: true });
@@ -1193,6 +1276,9 @@ function bindSettingsUi(root) {
     root.querySelector('#bbcf-load-draft-models')?.addEventListener('click', () => loadDraftModels({ button: root.querySelector('#bbcf-load-draft-models') }));
     root.querySelector('#bbcf-test-draft-api')?.addEventListener('click', testDraftSettings);
     root.querySelector('#bbcf-open-wardrobe')?.addEventListener('click', openWardrobeModal);
+    root.querySelector('#bbcf-image-connection-profile')?.addEventListener('change', () => applyImageConnectionProfile(root));
+    root.querySelector('#bbcf-save-image-connection-profile')?.addEventListener('click', () => saveImageConnectionProfile(root));
+    root.querySelector('#bbcf-delete-image-connection-profile')?.addEventListener('click', () => deleteImageConnectionProfile(root));
     root.querySelector('#bbcf-draft-connection-profile')?.addEventListener('change', () => applyDraftConnectionProfile(root));
     root.querySelector('#bbcf-save-draft-connection-profile')?.addEventListener('click', () => saveDraftConnectionProfile(root));
     root.querySelector('#bbcf-delete-draft-connection-profile')?.addEventListener('click', () => deleteDraftConnectionProfile(root));
@@ -1214,6 +1300,7 @@ function bindSettingsUi(root) {
         saveSettings();
         updateModelPicker(root);
         syncProviderRows();
+        syncImageConnectionProfileUi(root);
     });
     bindSettingInput(root, '#bbcf-draft-connection-mode', 'draftConnectionMode', 'value', () => {
         const settings = getSettings();
@@ -1317,7 +1404,7 @@ function setSettingsControlValue(root, selector, value) {
 
 function buildReferenceSettingsHtml(settings) {
     return settings.references.map(ref => `
-        <div class="bbcf-ref-card" data-bbcf-ref="${escapeHtml(ref.id)}">
+        <div class="bbcf-ref-card" data-bbcf-ref="${escapeHtml(ref.id)}" tabindex="0">
             <div class="bbcf-ref-thumb ${ref.path ? 'has-image' : ''}">
                 ${ref.path ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}">` : '<i class="fa-solid fa-user"></i>'}
             </div>
@@ -1330,6 +1417,7 @@ function buildReferenceSettingsHtml(settings) {
                 <textarea class="text_pole bbcf-ref-description" rows="2" placeholder="Краткое описание внешности, если рефы недоступны">${escapeHtml(ref.description)}</textarea>
                 <div class="bbcf-ref-actions">
                     <button class="menu_button bbcf-ref-upload" type="button"><i class="fa-solid fa-upload"></i><span>Загрузить</span></button>
+                    <button class="menu_button bbcf-ref-paste" type="button" title="Вставить изображение из буфера"><i class="fa-solid fa-paste"></i><span>Вставить</span></button>
                     <button class="menu_button bbcf-ref-clear" type="button" ${ref.path ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i></button>
                     <input class="bbcf-ref-file" type="file" accept="image/*" hidden>
                 </div>
@@ -1509,7 +1597,10 @@ function buildWardrobeEditorHtml(settings) {
         <form class="bbcf-wardrobe-editor" id="bbcf-wardrobe-editor">
             <div class="bbcf-wardrobe-editor-preview ${path ? 'has-image' : ''}">
                 ${path ? `<img src="${escapeHtml(path)}" alt="">` : '<i class="fa-solid fa-camera"></i>'}
-                <button class="menu_button" type="button" id="bbcf-wardrobe-editor-upload"><i class="fa-solid fa-upload"></i><span>Картинка</span></button>
+                <div class="bbcf-wardrobe-editor-image-actions">
+                    <button class="menu_button" type="button" id="bbcf-wardrobe-editor-upload"><i class="fa-solid fa-upload"></i><span>Картинка</span></button>
+                    <button class="menu_button" type="button" id="bbcf-wardrobe-editor-paste" title="Вставить изображение из буфера"><i class="fa-solid fa-paste"></i><span>Вставить</span></button>
+                </div>
                 <input type="file" accept="image/*" id="bbcf-wardrobe-editor-file" hidden>
                 <input type="hidden" id="bbcf-wardrobe-editor-path" value="${escapeHtml(path)}">
             </div>
@@ -1541,6 +1632,20 @@ function bindReferenceSettings(root) {
         if (!id) return;
         const fileInput = card.querySelector('.bbcf-ref-file');
         card.querySelector('.bbcf-ref-upload')?.addEventListener('click', () => fileInput?.click());
+        card.querySelector('.bbcf-ref-paste')?.addEventListener('click', async event => {
+            await pasteReferenceImageFromClipboard(id, card, event.currentTarget);
+        });
+        card.addEventListener('paste', async event => {
+            const file = getImageFileFromPasteEvent(event);
+            if (!file) return;
+            event.preventDefault();
+            try {
+                await saveReferenceImageFile(file, id, card);
+            } catch (error) {
+                console.error('[BB Comic Forge] reference paste failed', error);
+                toastr.error(error?.message || String(error), 'Comic Forge');
+            }
+        });
         fileInput?.addEventListener('change', async () => {
             const file = fileInput.files?.[0];
             if (!file) return;
@@ -1572,6 +1677,27 @@ function bindReferenceSettings(root) {
             updateReference(id, { description: String(event.target.value || '') });
         });
     });
+}
+
+async function pasteReferenceImageFromClipboard(id, card, button = null) {
+    try {
+        await withBusyButton(button, '<i class="fa-solid fa-spinner fa-spin"></i><span>Вставляю...</span>', async () => {
+            const file = await readClipboardImageFile();
+            await saveReferenceImageFile(file, id, card);
+        });
+    } catch (error) {
+        console.error('[BB Comic Forge] reference paste failed', error);
+        toastr.error(error?.message || String(error), 'Comic Forge');
+    }
+}
+
+async function saveReferenceImageFile(file, id, card) {
+    const dataUrl = await readFileAsDataUrl(file);
+    const path = await saveReferenceImageToFile(dataUrl, id);
+    const ref = updateReference(id, { path });
+    syncReferenceCard(card, ref);
+    toastr.success('Референс сохранён.', 'Comic Forge');
+    return path;
 }
 
 function syncReferenceCard(card, ref) {
@@ -1669,6 +1795,20 @@ function bindWardrobeEditor(root) {
     if (!form) return;
     const fileInput = form.querySelector('#bbcf-wardrobe-editor-file');
     form.querySelector('#bbcf-wardrobe-editor-upload')?.addEventListener('click', () => fileInput?.click());
+    form.querySelector('#bbcf-wardrobe-editor-paste')?.addEventListener('click', async event => {
+        await pasteWardrobeEditorImageFromClipboard(event.currentTarget);
+    });
+    form.addEventListener('paste', async event => {
+        const file = getImageFileFromPasteEvent(event);
+        if (!file) return;
+        event.preventDefault();
+        try {
+            await saveWardrobeEditorImageFile(file);
+        } catch (error) {
+            console.error('[BB Comic Forge] wardrobe paste failed', error);
+            toastr.error(error?.message || String(error), 'Comic Forge');
+        }
+    });
     fileInput?.addEventListener('change', async () => {
         const file = fileInput.files?.[0];
         if (!file) return;
@@ -1701,6 +1841,30 @@ function bindWardrobeEditor(root) {
         saveWardrobeEditor(form);
         renderWardrobeModal();
     });
+}
+
+async function pasteWardrobeEditorImageFromClipboard(button = null) {
+    try {
+        await withBusyButton(button, '<i class="fa-solid fa-spinner fa-spin"></i><span>Вставляю...</span>', async () => {
+            const file = await readClipboardImageFile();
+            await saveWardrobeEditorImageFile(file);
+        });
+    } catch (error) {
+        console.error('[BB Comic Forge] wardrobe paste failed', error);
+        toastr.error(error?.message || String(error), 'Comic Forge');
+    }
+}
+
+async function saveWardrobeEditorImageFile(file) {
+    const dataUrl = await readFileAsDataUrl(file);
+    const path = await saveReferenceImageToFile(dataUrl, 'wardrobe_item');
+    if (state.wardrobeEditingId && state.wardrobeEditingId !== 'new') {
+        updateWardrobeItem(state.wardrobeEditingId, { path });
+    } else {
+        state.wardrobeTempPath = path;
+    }
+    renderWardrobeModal();
+    return path;
 }
 
 function updateReference(id, patch) {
@@ -2051,6 +2215,113 @@ function syncProviderRows() {
     updateModelPicker(root);
 }
 
+function syncImageConnectionProfileUi(root = document.getElementById(SETTINGS_ID), { forceName = false } = {}) {
+    if (!root) return;
+    const settings = getSettings();
+    const active = getActiveImageConnectionProfile(settings);
+    updateSelectOptions(root.querySelector('#bbcf-image-connection-profile'), buildImageConnectionProfileOptionsHtml(settings), settings.activeImageConnectionProfileId);
+    const name = root.querySelector('#bbcf-image-connection-profile-name');
+    if (name && document.activeElement !== name && (forceName || !name.value.trim())) name.value = active?.label || '';
+    const deleteButton = root.querySelector('#bbcf-delete-image-connection-profile');
+    if (deleteButton) deleteButton.disabled = !active;
+}
+
+function applyImageConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    const settings = getSettings();
+    const selectedId = String(root?.querySelector('#bbcf-image-connection-profile')?.value || '');
+    const profile = settings.imageConnectionProfiles.find(item => item.id === selectedId);
+    if (!profile) {
+        settings.activeImageConnectionProfileId = '';
+        saveSettings();
+        syncImageConnectionProfileUi(root, { forceName: true });
+        return;
+    }
+
+    applyImageConnectionProfileToSettings(settings, profile);
+    settings.activeImageConnectionProfileId = profile.id;
+    saveSettings();
+    setImageConnectionControls(root, settings);
+    syncProviderRows();
+    syncImageConnectionProfileUi(root, { forceName: true });
+    toastr.success('Профиль генерации картинок применён.', 'Comic Forge');
+}
+
+function saveImageConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    const settings = getSettings();
+    const selectedId = settings.activeImageConnectionProfileId || String(root?.querySelector('#bbcf-image-connection-profile')?.value || '');
+    const existingIndex = settings.imageConnectionProfiles.findIndex(profile => profile.id === selectedId);
+    const label = String(root?.querySelector('#bbcf-image-connection-profile-name')?.value || '').trim()
+        || (existingIndex >= 0 ? settings.imageConnectionProfiles[existingIndex].label : `Профиль картинок ${settings.imageConnectionProfiles.length + 1}`);
+    const profile = {
+        ...buildImageConnectionProfileSnapshot(settings),
+        id: existingIndex >= 0 ? settings.imageConnectionProfiles[existingIndex].id : makeId('image-connection'),
+        label,
+    };
+    if (existingIndex >= 0) settings.imageConnectionProfiles[existingIndex] = profile;
+    else settings.imageConnectionProfiles.unshift(profile);
+    settings.activeImageConnectionProfileId = profile.id;
+    saveSettings();
+    syncImageConnectionProfileUi(root, { forceName: true });
+    toastr.success(existingIndex >= 0 ? 'Профиль генерации картинок обновлён.' : 'Профиль генерации картинок сохранён.', 'Comic Forge');
+}
+
+function deleteImageConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    const settings = getSettings();
+    const selectedId = settings.activeImageConnectionProfileId || String(root?.querySelector('#bbcf-image-connection-profile')?.value || '');
+    const profile = settings.imageConnectionProfiles.find(item => item.id === selectedId);
+    if (!profile) return;
+    if (!window.confirm(`Удалить профиль генерации картинок "${profile.label}"?`)) return;
+    settings.imageConnectionProfiles = settings.imageConnectionProfiles.filter(item => item.id !== selectedId);
+    settings.activeImageConnectionProfileId = '';
+    saveSettings();
+    syncImageConnectionProfileUi(root, { forceName: true });
+    toastr.success('Профиль генерации картинок удалён.', 'Comic Forge');
+}
+
+function buildImageConnectionProfileSnapshot(settings) {
+    return {
+        apiType: settings.apiType,
+        endpoint: settings.endpoint,
+        apiKey: settings.apiKey,
+        model: settings.model,
+        availableModels: filterModelNamesForProvider(settings.availableModels, settings.apiType),
+        openaiSize: settings.openaiSize,
+        openaiQuality: settings.openaiQuality,
+        aspectRatio: settings.aspectRatio,
+        imageSize: settings.imageSize,
+        naisteraModel: settings.naisteraModel,
+        naisteraAspectRatio: settings.naisteraAspectRatio,
+        naisteraPreset: settings.naisteraPreset,
+    };
+}
+
+function applyImageConnectionProfileToSettings(settings, profile) {
+    settings.apiType = profile.apiType;
+    settings.endpoint = profile.endpoint;
+    settings.apiKey = profile.apiKey;
+    settings.model = profile.model;
+    settings.availableModels = filterModelNamesForProvider(profile.availableModels, profile.apiType);
+    settings.openaiSize = profile.openaiSize;
+    settings.openaiQuality = profile.openaiQuality;
+    settings.aspectRatio = profile.aspectRatio;
+    settings.imageSize = profile.imageSize;
+    settings.naisteraModel = profile.naisteraModel;
+    settings.naisteraAspectRatio = profile.naisteraAspectRatio;
+    settings.naisteraPreset = profile.naisteraPreset;
+}
+
+function setImageConnectionControls(root, settings) {
+    setSettingsControlValue(root, '#bbcf-api-type', settings.apiType);
+    setSettingsControlValue(root, '#bbcf-endpoint', settings.endpoint);
+    setSettingsControlValue(root, '#bbcf-api-key', settings.apiKey);
+    setSettingsControlValue(root, '#bbcf-model', settings.model);
+    setSettingsControlValue(root, '#bbcf-openai-size', settings.openaiSize);
+    setSettingsControlValue(root, '#bbcf-openai-quality', settings.openaiQuality);
+    setSettingsControlValue(root, '#bbcf-image-size', settings.imageSize);
+    setSettingsControlValue(root, '#bbcf-naistera-model', settings.naisteraModel);
+    setSettingsControlValue(root, '#bbcf-naistera-preset', settings.naisteraPreset);
+}
+
 function syncDraftConnectionRows() {
     const settings = getSettings();
     const root = document.getElementById(SETTINGS_ID);
@@ -2339,6 +2610,12 @@ function buildDraftConnectionProfileOptionsHtml(settings, selected = settings.ac
     return `${current}${saved}`;
 }
 
+function buildImageConnectionProfileOptionsHtml(settings, selected = settings.activeImageConnectionProfileId) {
+    const current = option('', selected, 'Текущие настройки');
+    const saved = settings.imageConnectionProfiles.map(profile => option(profile.id, selected, profile.label)).join('');
+    return `${current}${saved}`;
+}
+
 function buildDraftTavernProfileOptionsHtml(settings, selected = settings.draftTavernProfileId) {
     const profiles = getSupportedTavernDraftProfiles();
     const current = option('', selected, 'Текущий профиль SillyTavern');
@@ -2370,6 +2647,10 @@ function getDraftTavernProfileLabel(profileId) {
 
 function getActiveDraftConnectionProfile(settings = getSettings()) {
     return settings.draftConnectionProfiles.find(profile => profile.id === settings.activeDraftConnectionProfileId) || null;
+}
+
+function getActiveImageConnectionProfile(settings = getSettings()) {
+    return settings.imageConnectionProfiles.find(profile => profile.id === settings.activeImageConnectionProfileId) || null;
 }
 
 function buildDraftPromptPresetOptionsHtml(settings, selected = settings.activeDraftPromptPresetId) {
@@ -4830,6 +5111,46 @@ async function saveImageToFile(dataUrl, panelNumber = 0, signal = null) {
     return result.path;
 }
 
+async function withBusyButton(button, busyHtml, task) {
+    const previousHtml = button?.innerHTML;
+    const previousDisabled = button?.disabled;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = busyHtml;
+    }
+    try {
+        return await task();
+    } finally {
+        if (button) {
+            button.disabled = previousDisabled;
+            button.innerHTML = previousHtml;
+        }
+    }
+}
+
+function getImageFileFromPasteEvent(event) {
+    const files = Array.from(event?.clipboardData?.files || []);
+    const file = files.find(item => item?.type?.startsWith('image/'));
+    if (file) return file;
+    const item = Array.from(event?.clipboardData?.items || []).find(entry => entry?.type?.startsWith('image/'));
+    return item?.getAsFile?.() || null;
+}
+
+async function readClipboardImageFile() {
+    if (typeof navigator.clipboard?.read !== 'function') {
+        throw new Error('Браузер не умеет читать картинки из буфера. Нажми Ctrl+V на карточке референса.');
+    }
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+        const type = item.types.find(value => value.startsWith('image/'));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const extension = type.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+        return new File([blob], `bbcf_clipboard.${extension}`, { type });
+    }
+    throw new Error('В буфере не найдено изображение.');
+}
+
 function readFileAsDataUrl(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -5210,6 +5531,7 @@ function makeShareHtml(html) {
     });
     doc.querySelectorAll('.bbcf-export-notice').forEach(node => node.remove());
     doc.querySelectorAll('.bbcf-panel-action').forEach(node => node.remove());
+    doc.querySelectorAll('.bbcf-comic-action').forEach(node => node.remove());
     doc.querySelectorAll('.bbcf-comic-title span').forEach(span => {
         const text = span.textContent?.trim() || '';
         if (/^(?:single image|\d+\s+panels?)$/i.test(text)) span.remove();
@@ -5321,16 +5643,20 @@ async function sendPendingComicToChat(root, { targetMessageId = null } = {}) {
         const previewHtml = root.querySelector('#bbcf-preview-content')?.innerHTML || state.pendingComic.html;
         const html = makeShareHtml(previewHtml);
         const currentDraft = readDraftFromModal(root);
-        const insertMode = currentDraft.insertMode || state.pendingComic.draft?.insertMode || getSettings().insertMode;
+        const pendingDraft = state.pendingComic.draft || {};
+        const insertMode = currentDraft.insertMode || pendingDraft.insertMode || getSettings().insertMode;
+        const historyDraft = state.pendingComic.fromHistory
+            ? { ...pendingDraft, generationMode: pendingDraft.generationMode || pendingDraft.mode, insertMode }
+            : { ...pendingDraft, ...currentDraft, insertMode };
         const messageId = await insertComicIntoChat(html, insertMode, targetMessageId);
-        const record = rememberComic({ ...(state.pendingComic.draft || {}), ...currentDraft, insertMode }, html, {
+        const record = rememberComic(historyDraft, html, {
             historyId: state.pendingComic.historyId,
             messageId,
         });
         state.lastComic = record;
         state.pendingComic = { ...state.pendingComic, html, sent: true, historyId: record.id };
         renderComicHistory(root);
-        bindComicActions(document.getElementById('chat') || document.body);
+        scheduleComicActionRefresh();
         updateSendToChatButton(root);
         updateFloatingButton();
         toastr.success('Комикс добавлен в чат.', 'Comic Forge');
@@ -5494,8 +5820,11 @@ function isHistoryPreviewMode(root) {
 function restoreCurrentPreview(root) {
     const preview = root?.querySelector('#bbcf-preview-content');
     if (!preview) return;
-    if (state.pendingComic?.html && !state.pendingComic.sent) {
-        preview.innerHTML = state.pendingComic.html;
+    const pending = isHistoryPreviewMode(root) ? state.historyPreviewPreviousPendingComic : state.pendingComic;
+    state.pendingComic = pending || null;
+    state.historyPreviewPreviousPendingComic = null;
+    if (pending?.html && !pending.sent) {
+        preview.innerHTML = pending.html;
         bindComicActions(preview);
         attachForgePreviewPanelControls(root);
     } else {
@@ -5503,6 +5832,7 @@ function restoreCurrentPreview(root) {
     }
     setHistoryPreviewMode(root, false);
     updateSendToChatButton(root);
+    updateFloatingButton();
 }
 
 function clearForgePreview(root) {
@@ -5516,6 +5846,7 @@ function clearForgePreview(root) {
     const progress = root?.querySelector('#bbcf-progress');
     if (progress) progress.innerHTML = '';
     state.pendingComic = null;
+    state.historyPreviewPreviousPendingComic = null;
     setHistoryPreviewMode(root, false);
     updateSendToChatButton(root);
     updateFloatingButton();
@@ -5702,6 +6033,9 @@ function renderComicHistory(root) {
         settings.comicHistory = (settings.comicHistory || []).filter(record => record?.profileKey !== profileKey);
         state.lastComic = null;
         saveSettings();
+        if (isHistoryPreviewMode(root)) {
+            restoreCurrentPreview(root);
+        }
         renderComicHistory(root);
         toastr.success('История комиксов очищена.', 'Comic Forge');
     });
@@ -5710,20 +6044,35 @@ function renderComicHistory(root) {
         if (!record) return;
         card.querySelector('[data-bbcf-history-preview]')?.addEventListener('click', () => {
             state.lastComic = record;
+            if (!isHistoryPreviewMode(root)) {
+                state.historyPreviewPreviousPendingComic = state.pendingComic;
+            }
+            state.pendingComic = {
+                draft: record,
+                html: makeShareHtml(record.html),
+                sent: false,
+                historyId: record.id,
+                savedPngPath: record.savedPngPath || '',
+                fromHistory: true,
+            };
             const preview = root.querySelector('#bbcf-preview-content');
             if (preview) {
-                preview.innerHTML = record.html;
+                preview.innerHTML = state.pendingComic.html;
                 cleanupRenderedComics(preview);
                 bindComicActions(preview);
                 if (record.savedPngPath) showSavedPageImageNotice(root, record.savedPngPath);
             }
             setHistoryPreviewMode(root, true);
             updateSendToChatButton(root);
+            updateFloatingButton();
         });
         card.querySelector('[data-bbcf-history-delete]')?.addEventListener('click', () => {
             const settings = getSettings();
             settings.comicHistory = (settings.comicHistory || []).filter(item => item.id !== record.id);
             if (state.lastComic?.id === record.id) state.lastComic = null;
+            if (state.pendingComic?.fromHistory && state.pendingComic.historyId === record.id) {
+                restoreCurrentPreview(root);
+            }
             saveSettings();
             renderComicHistory(root);
             toastr.success('Запись удалена из истории.', 'Comic Forge');
@@ -5813,6 +6162,19 @@ async function saveCurrentChat(context = SillyTavern.getContext()) {
 
 function bindComicActions(root) {
     if (!root) return;
+    const chatMessages = new Set();
+    getComicPages(root).forEach(page => {
+        page.classList.add('bbcf-comic-page');
+        page.style.position = 'relative';
+        const chatMessage = page.closest('#chat .mes');
+        if (chatMessage) {
+            chatMessages.add(chatMessage);
+            return;
+        }
+        if (page.querySelector('.bbcf-comic-zoom')) return;
+        page.appendChild(createComicZoomButton(() => openComicLightbox(page)));
+    });
+    chatMessages.forEach(bindChatComicMessageButton);
     root.querySelectorAll('[data-bbcf-regen]').forEach(button => {
         if (button.dataset.bbcfBound === '1') return;
         button.dataset.bbcfBound = '1';
@@ -5833,14 +6195,345 @@ function bindComicActions(root) {
     });
 }
 
+function createComicZoomButton(onOpen) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'bbcf-comic-action bbcf-comic-zoom';
+    button.title = 'Открыть комикс крупнее';
+    button.setAttribute('aria-label', 'Открыть комикс крупнее');
+    button.innerHTML = '<svg class="bbcf-comic-zoom-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="M15 15l5 5"></path><path d="M10.5 7.5v6"></path><path d="M7.5 10.5h6"></path></svg>';
+    bindTouchSafeAction(button, onOpen);
+    return button;
+}
+
+function bindChatComicMessageButton(chatMessage) {
+    const actions = chatMessage.querySelector('.mes_buttons');
+    if (!actions || actions.querySelector('.bbcf-message-comic-zoom')) return;
+    const button = document.createElement('div');
+    button.className = 'mes_button bbcf-message-comic-zoom';
+    button.title = 'Открыть комикс крупнее';
+    button.setAttribute('aria-label', 'Открыть комикс крупнее');
+    button.setAttribute('role', 'button');
+    button.tabIndex = 0;
+    button.innerHTML = '<svg class="bbcf-message-comic-zoom-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="5.5"></circle><path d="M15 15l5 5"></path><path d="M10.5 7.5v6"></path><path d="M7.5 10.5h6"></path></svg>';
+    const open = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const page = getComicPages(chatMessage)[0];
+        if (page) openComicLightbox(page);
+    };
+    bindTouchSafeAction(button, open);
+    button.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        open(event);
+    });
+    const extraButtons = actions.querySelector('.extraMesButtons');
+    if (extraButtons?.nextSibling) {
+        actions.insertBefore(button, extraButtons.nextSibling);
+    } else {
+        actions.appendChild(button);
+    }
+}
+
+function bindTouchSafeAction(element, handler) {
+    if (!element || typeof handler !== 'function') return;
+    let suppressClickUntil = 0;
+    const activate = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressClickUntil = Date.now() + 450;
+        handler(event);
+    };
+
+    element.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'mouse') event.stopPropagation();
+    }, { passive: true });
+    element.addEventListener('touchstart', event => {
+        event.stopPropagation();
+    }, { passive: true });
+    element.addEventListener('pointerup', event => {
+        if (event.pointerType === 'mouse') return;
+        if (Date.now() < suppressClickUntil) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        activate(event);
+    });
+    element.addEventListener('touchend', event => {
+        if (Date.now() < suppressClickUntil) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        activate(event);
+    }, { passive: false });
+    element.addEventListener('click', event => {
+        if (Date.now() < suppressClickUntil) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        activate(event);
+    });
+}
+
+function getComicPages(root) {
+    const pages = [];
+    if (root.matches?.(COMIC_PAGE_SELECTOR)) pages.push(root);
+    root.querySelectorAll?.(COMIC_PAGE_SELECTOR).forEach(page => {
+        if (!pages.includes(page)) pages.push(page);
+    });
+    return pages;
+}
+
+function scheduleComicActionRefresh(root = null) {
+    [0, 80, 250].forEach(delay => {
+        setTimeout(() => {
+            const target = root || document.getElementById('chat');
+            if (!target?.isConnected) return;
+            cleanupRenderedComics(target);
+            bindComicActions(target);
+        }, delay);
+    });
+}
+
+function openComicLightbox(page) {
+    if (!page) return;
+    void state.lightboxPopup?.completeCancelled?.();
+    state.lightboxPopup = null;
+    document.body.classList.add('bbcf-lightbox-open');
+
+    const root = document.createElement('div');
+    root.id = 'bbcf-comic-lightbox';
+    root.className = 'bbcf-comic-lightbox';
+    root.innerHTML = `
+        <div class="bbcf-comic-lightbox-shell">
+            <header class="bbcf-comic-lightbox-toolbar">
+                <strong><i class="fa-solid fa-book-open"></i> Просмотр комикса</strong>
+                <div class="bbcf-comic-lightbox-controls">
+                    <button type="button" title="Уменьшить" aria-label="Уменьшить" data-bbcf-lightbox-zoom="-1"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                    <button type="button" title="Сбросить масштаб" aria-label="Сбросить масштаб" data-bbcf-lightbox-reset><i class="fa-solid fa-rotate-left"></i></button>
+                    <button type="button" title="Увеличить" aria-label="Увеличить" data-bbcf-lightbox-zoom="1"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+                    <button type="button" title="Закрыть" aria-label="Закрыть" data-bbcf-lightbox-close><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </header>
+            <div class="bbcf-comic-lightbox-scroll">
+                <div class="bbcf-comic-lightbox-stage"></div>
+            </div>
+        </div>
+    `;
+
+    const stage = root.querySelector('.bbcf-comic-lightbox-stage');
+    const scroll = root.querySelector('.bbcf-comic-lightbox-scroll');
+    const clone = page.cloneNode(true);
+    clone.classList.add('bbcf-lightbox-page');
+    clone.querySelectorAll('.bbcf-panel-action, .bbcf-comic-action').forEach(node => node.remove());
+    clone.querySelectorAll('[data-bbcf-instruction]').forEach(node => node.removeAttribute('data-bbcf-instruction'));
+    clone.querySelectorAll('img').forEach(img => {
+        img.draggable = false;
+    });
+    stage.appendChild(clone);
+
+    const popup = new Popup(root, POPUP_TYPE.DISPLAY, '', {
+        large: true,
+        transparent: true,
+        animation: 'fast',
+        onClose: () => {
+            if (state.lightboxPopup === popup) {
+                state.lightboxPopup = null;
+                document.body.classList.remove('bbcf-lightbox-open');
+                document.removeEventListener('keydown', onKeyDown);
+            }
+        },
+    });
+    state.lightboxPopup = popup;
+    popup.dlg.classList.add('bbcf-comic-popup-dialog');
+    popup.dlg.addEventListener('click', event => {
+        if (event.target === popup.dlg) close(event);
+    });
+    void popup.show();
+
+    const measuredWidth = page.getBoundingClientRect().width || 760;
+    const viewportFitWidth = Math.max(280, Math.min(760, (scroll.clientWidth || window.innerWidth || 760) - 32));
+    const baseWidth = Math.max(280, Math.min(900, Math.max(measuredWidth, viewportFitWidth)));
+    const minZoom = 0.65;
+    const maxZoom = 4;
+    let zoom = 1;
+    let contentWidth = baseWidth;
+    const canCloseAt = Date.now() + 650;
+    const getScrollCenter = () => {
+        const rect = scroll.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    };
+    const updateZoom = (center = getScrollCenter()) => {
+        const previousWidth = contentWidth || baseWidth;
+        const previousHeight = clone.getBoundingClientRect().height || scroll.scrollHeight || 1;
+        const rect = scroll.getBoundingClientRect();
+        const offsetX = center.x - rect.left;
+        const offsetY = center.y - rect.top;
+        const ratioX = previousWidth ? (scroll.scrollLeft + offsetX) / previousWidth : 0.5;
+        const ratioY = previousHeight ? (scroll.scrollTop + offsetY) / previousHeight : 0.5;
+        const width = Math.round(baseWidth * zoom);
+        contentWidth = width;
+        clone.style.setProperty('--bbcf-lightbox-page-width', `${width}px`);
+        stage.style.width = `${Math.max(width, scroll.clientWidth)}px`;
+        requestAnimationFrame(() => {
+            const nextHeight = clone.getBoundingClientRect().height || scroll.scrollHeight || 1;
+            scroll.scrollLeft = Math.max(0, ratioX * width - offsetX);
+            scroll.scrollTop = Math.max(0, ratioY * nextHeight - offsetY);
+        });
+    };
+    const setZoom = (nextZoom, center = getScrollCenter()) => {
+        if (!Number.isFinite(nextZoom)) return;
+        zoom = Math.max(minZoom, Math.min(maxZoom, Number(nextZoom.toFixed(2))));
+        updateZoom(center);
+    };
+    const close = (event = null, force = false) => {
+        if (!force && Date.now() < canCloseAt) {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            return;
+        }
+        void popup.completeCancelled();
+    };
+    const onKeyDown = event => {
+        if (event.key === 'Escape') close(event, true);
+    };
+
+    root.querySelectorAll('[data-bbcf-lightbox-close]').forEach(button => button.addEventListener('click', event => close(event)));
+    root.querySelector('[data-bbcf-lightbox-reset]')?.addEventListener('click', () => {
+        setZoom(1);
+    });
+    root.querySelectorAll('[data-bbcf-lightbox-zoom]').forEach(button => {
+        button.addEventListener('click', () => {
+            setZoom(zoom + Number(button.dataset.bbcfLightboxZoom) * 0.25);
+        });
+    });
+    installComicLightboxGestures({ scroll, setZoom, getZoom: () => zoom });
+    document.addEventListener('keydown', onKeyDown);
+    updateZoom();
+}
+
+function installComicLightboxGestures({ scroll, setZoom, getZoom }) {
+    if (!scroll) return;
+    const pointers = new Map();
+    let gesture = null;
+    let tap = null;
+    let lastTap = { time: 0, x: 0, y: 0 };
+
+    const getDistance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const getCenter = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const getPointerPair = () => Array.from(pointers.values()).slice(0, 2);
+    const startPinch = () => {
+        const [a, b] = getPointerPair();
+        if (!a || !b) return;
+        gesture = {
+            type: 'pinch',
+            startDistance: Math.max(1, getDistance(a, b)),
+            startZoom: getZoom(),
+        };
+    };
+
+    scroll.addEventListener('pointerdown', event => {
+        if (event.target?.closest?.('.bbcf-comic-lightbox-toolbar')) return;
+        event.preventDefault();
+        pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        try {
+            scroll.setPointerCapture(event.pointerId);
+        } catch {
+            // Some mobile browsers can refuse pointer capture during synthetic taps.
+        }
+        tap = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+        if (pointers.size >= 2) {
+            startPinch();
+        } else {
+            gesture = { type: 'pan', lastX: event.clientX, lastY: event.clientY };
+            scroll.classList.add('is-dragging');
+        }
+    });
+
+    scroll.addEventListener('pointermove', event => {
+        const previous = pointers.get(event.pointerId);
+        if (!previous) return;
+        event.preventDefault();
+        const current = { x: event.clientX, y: event.clientY };
+        pointers.set(event.pointerId, current);
+        if (tap?.id === event.pointerId && getDistance(tap, current) > 8) tap.moved = true;
+
+        if (pointers.size >= 2) {
+            const [a, b] = getPointerPair();
+            if (!a || !b) return;
+            if (gesture?.type !== 'pinch') startPinch();
+            const distance = Math.max(1, getDistance(a, b));
+            const nextZoom = gesture.startZoom * (distance / gesture.startDistance);
+            setZoom(nextZoom, getCenter(a, b));
+            return;
+        }
+
+        if (gesture?.type === 'pan') {
+            scroll.scrollLeft -= current.x - gesture.lastX;
+            scroll.scrollTop -= current.y - gesture.lastY;
+            gesture.lastX = current.x;
+            gesture.lastY = current.y;
+        }
+    });
+
+    const finishPointer = event => {
+        const current = pointers.get(event.pointerId);
+        if (!current) return;
+        const wasTap = tap?.id === event.pointerId && !tap.moved && getDistance(tap, current) <= 10;
+        pointers.delete(event.pointerId);
+        try {
+            scroll.releasePointerCapture(event.pointerId);
+        } catch {
+            // Pointer capture may already be gone after browser gesture cancellation.
+        }
+
+        if (wasTap && pointers.size === 0) {
+            const now = Date.now();
+            const closeToLastTap = getDistance(lastTap, current) <= 34;
+            if (now - lastTap.time <= 320 && closeToLastTap) {
+                event.preventDefault();
+                setZoom(getZoom() > 1.1 ? 1 : 2, current);
+                lastTap = { time: 0, x: 0, y: 0 };
+            } else {
+                lastTap = { time: now, x: current.x, y: current.y };
+            }
+        }
+
+        if (pointers.size >= 2) {
+            startPinch();
+        } else if (pointers.size === 1) {
+            const [remaining] = pointers.values();
+            gesture = { type: 'pan', lastX: remaining.x, lastY: remaining.y };
+        } else {
+            gesture = null;
+            tap = null;
+            scroll.classList.remove('is-dragging');
+        }
+    };
+
+    scroll.addEventListener('pointerup', finishPointer);
+    scroll.addEventListener('pointercancel', finishPointer);
+    scroll.addEventListener('wheel', event => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        const direction = event.deltaY > 0 ? -1 : 1;
+        setZoom(getZoom() + direction * 0.18, { x: event.clientX, y: event.clientY });
+    }, { passive: false });
+}
+
 function cleanupRenderedComics(root) {
     if (!root) return;
-    root.querySelectorAll('.bbcf-comic-title span').forEach(span => {
+    root.querySelectorAll('.bbcf-comic-title span, .custom-bbcf-comic-title span').forEach(span => {
         const text = span.textContent?.trim() || '';
         if (/^(?:single image|\d+\s+panels?)$/i.test(text)) span.remove();
     });
     root.querySelectorAll('.bbcf-panel-action').forEach(button => button.remove());
-    root.querySelectorAll('.bbcf-panel:not(.bbcf-panel-error)[data-bbcf-instruction]').forEach(panel => {
+    root.querySelectorAll('.bbcf-comic-action').forEach(button => button.remove());
+    root.querySelectorAll('.bbcf-message-comic-zoom').forEach(button => button.remove());
+    root.querySelectorAll('.bbcf-panel:not(.bbcf-panel-error)[data-bbcf-instruction], .custom-bbcf-panel:not(.custom-bbcf-panel-error)[data-bbcf-instruction]').forEach(panel => {
         panel.removeAttribute('data-bbcf-instruction');
     });
 }
