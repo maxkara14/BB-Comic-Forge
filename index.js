@@ -14,6 +14,7 @@ import { ConnectionManagerRequestService } from '../../shared.js';
 const MODULE_NAME = 'BB-Comic-Forge';
 const SETTINGS_ID = 'bbcf-settings';
 const FAB_ID = 'bbcf-open-fab';
+const FAB_WRAPPER_ID = 'bbcf-open-wrapper';
 const MODAL_ID = 'bbcf-modal-root';
 const MAX_PANELS = 6;
 const UPLOAD_ALLOWED_FORMATS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif']);
@@ -3354,11 +3355,21 @@ function filterDraftModelNames(names, mode) {
 function updateFloatingButton() {
     const settings = getSettings();
     let button = document.getElementById(FAB_ID);
+    let wrapper = document.getElementById(FAB_WRAPPER_ID);
     if (!settings.enabled || !settings.showFab) {
         button?.remove();
+        wrapper?.remove();
         return;
     }
     const host = findChatButtonHost();
+    const useChatLauncher = host !== document.body;
+    if (useChatLauncher && !wrapper) {
+        wrapper = document.createElement('div');
+        wrapper.id = FAB_WRAPPER_ID;
+    } else if (!useChatLauncher && wrapper) {
+        wrapper.remove();
+        wrapper = null;
+    }
     if (!button) {
         button = document.createElement('button');
         button.id = FAB_ID;
@@ -3378,8 +3389,8 @@ function updateFloatingButton() {
     }
     button.classList.toggle('bbcf-generating', state.generating);
     button.classList.toggle('bbcf-ready', Boolean(state.pendingComic?.html && !state.pendingComic.sent));
-    button.classList.toggle('bbcf-chat-launcher', host !== document.body);
-    placeChatLauncherButton(button, host);
+    button.classList.toggle('bbcf-chat-launcher', useChatLauncher);
+    placeChatLauncherButton(button, host, wrapper);
 }
 
 function findChatButtonHost() {
@@ -3388,23 +3399,28 @@ function findChatButtonHost() {
         || document.body;
 }
 
-function placeChatLauncherButton(button, host) {
+function placeChatLauncherButton(button, host, wrapper = null) {
+    const launcher = wrapper || button;
+    if (wrapper && button.parentElement !== wrapper) {
+        wrapper.appendChild(button);
+    }
+
     const optionsButton = document.getElementById('options_button');
     if (optionsButton?.parentElement === host) {
         const next = optionsButton.nextSibling;
-        if (button.parentElement !== host || button.previousSibling !== optionsButton) {
-            host.insertBefore(button, next);
+        if (launcher.parentElement !== host || launcher.previousSibling !== optionsButton) {
+            host.insertBefore(launcher, next);
         }
         return;
     }
     const sendForm = document.getElementById('send_form');
     if (sendForm?.parentElement === host) {
-        if (button.parentElement !== host || button.nextSibling !== sendForm) {
-            host.insertBefore(button, sendForm);
+        if (launcher.parentElement !== host || launcher.nextSibling !== sendForm) {
+            host.insertBefore(launcher, sendForm);
         }
         return;
     }
-    if (button.parentElement !== host) host.appendChild(button);
+    if (launcher.parentElement !== host) host.appendChild(launcher);
 }
 
 function openForgeModal(options = {}) {

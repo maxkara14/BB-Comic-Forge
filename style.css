@@ -347,16 +347,23 @@
     border-color: rgba(212, 175, 55, 0.45);
 }
 
-#bbcf-open-fab.bbcf-chat-launcher {
+#bbcf-open-wrapper {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    z-index: 1001;
+    transform: translate(-5px, -2px);
+}
+
+#bbcf-open-fab.bbcf-chat-launcher {
+    position: static;
     right: auto;
     bottom: auto;
-    z-index: 1001;
+    z-index: auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    align-self: center;
     width: 26px;
     min-width: 26px;
     height: 26px;
@@ -364,7 +371,7 @@
     max-height: 26px;
     padding: 0;
     margin: 0;
-    transform: translate(-5px, -2px);
+    transform: none;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     vertical-align: middle;
 }
