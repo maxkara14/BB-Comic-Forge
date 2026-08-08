@@ -3,6 +3,7 @@ import {
     eventSource,
     event_types,
     saveChat,
+    saveSettings as saveSillyTavernSettings,
     substituteParams,
     updateMessageBlock,
 } from '../../../../script.js';
@@ -545,7 +546,18 @@ function getSettings() {
         settings.activeWardrobeProfileKey = wardrobeProfileKey;
         dirty = true;
     }
-    settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeProfiles[wardrobeProfileKey] || {});
+    const hasActiveWardrobeProfile = hasOwn(settings.wardrobeProfiles, wardrobeProfileKey);
+    let wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeProfiles[wardrobeProfileKey] || {});
+    if (!hasActiveWardrobeProfile && !hasAnyWardrobeAssignment(wardrobeAssignments)) {
+        const seed = findProfileSeed(settings.wardrobeProfiles, getScopedProfileFallbackKeys(), hasAnyWardrobeAssignment);
+        if (seed) {
+            wardrobeAssignments = normalizeWardrobeAssignments(seed.value);
+            settings.wardrobeProfiles[wardrobeProfileKey] = structuredClone(wardrobeAssignments);
+            dirty = true;
+            console.info('[BB Comic Forge] restored wardrobe assignment profile from', seed.key);
+        }
+    }
+    settings.wardrobeAssignments = wardrobeAssignments;
     if (settings.savedDraft && typeof settings.savedDraft !== 'object') {
         settings.savedDraft = null;
         dirty = true;
@@ -587,7 +599,18 @@ function getSettings() {
         settings.activeReferenceProfileKey = referenceProfileKey;
         dirty = true;
     }
-    settings.references = normalizeReferences(settings.referenceProfiles[referenceProfileKey] || []);
+    const hasActiveReferenceProfile = hasOwn(settings.referenceProfiles, referenceProfileKey);
+    let references = normalizeReferences(settings.referenceProfiles[referenceProfileKey] || []);
+    if (!hasActiveReferenceProfile && !hasReferenceProfileData(references)) {
+        const seed = findProfileSeed(settings.referenceProfiles, getScopedProfileFallbackKeys(), hasReferenceProfileData);
+        if (seed) {
+            references = normalizeReferences(seed.value);
+            settings.referenceProfiles[referenceProfileKey] = structuredClone(references);
+            dirty = true;
+            console.info('[BB Comic Forge] restored reference profile from', seed.key);
+        }
+    }
+    settings.references = references;
     if (dirty) saveSettings();
     return settings;
 }
@@ -642,6 +665,28 @@ function normalizeReferences(rawReferences) {
             path: String(ref.path || '').trim(),
         };
     });
+}
+
+function hasReferenceProfileData(rawReferences) {
+    return normalizeReferences(rawReferences).some(ref =>
+        ref.enabled === false
+        || ref.path
+        || ref.name
+        || ref.description);
+}
+
+function findProfileSeed(profiles, fallbackKeys, hasData) {
+    if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return null;
+    for (const key of fallbackKeys) {
+        if (!key || !hasOwn(profiles, key)) continue;
+        const value = profiles[key];
+        if (hasData(value)) return { key, value };
+    }
+    return null;
+}
+
+function hasOwn(object, key) {
+    return Object.prototype.hasOwnProperty.call(object || {}, key);
 }
 
 function normalizeSavedStyles(rawStyles) {
@@ -896,6 +941,15 @@ function saveSettings() {
     SillyTavern.getContext().saveSettingsDebounced();
 }
 
+let immediateSettingsSavePromise = Promise.resolve();
+
+function saveSettingsImmediately() {
+    immediateSettingsSavePromise = immediateSettingsSavePromise
+        .catch(() => undefined)
+        .then(() => saveSillyTavernSettings());
+    return immediateSettingsSavePromise;
+}
+
 function clampInt(value, min, max, fallback) {
     const number = Number(value);
     if (!Number.isFinite(number)) return fallback;
@@ -1101,7 +1155,10 @@ function createSettingsUi() {
                             <div>
                                 <h5><i class="fa-solid fa-shirt"></i> Гардероб</h5>
                             </div>
-                            <button class="menu_button bbcf-primary" type="button" id="bbcf-open-wardrobe"><i class="fa-solid fa-door-open"></i><span>Открыть</span></button>
+                            <div class="bbcf-wardrobe-head-actions">
+                                <button class="menu_button" type="button" data-bbcf-wardrobe-recover title="Найти гардеробные картинки без записи в библиотеке"><i class="fa-solid fa-rotate-left"></i><span>Восстановить</span></button>
+                                <button class="menu_button bbcf-primary" type="button" id="bbcf-open-wardrobe"><i class="fa-solid fa-door-open"></i><span>Открыть</span></button>
+                            </div>
                         </div>
                         <div class="bbcf-wardrobe-options">
                             <label class="checkbox_label"><input type="checkbox" id="bbcf-wardrobe-enabled" ${settings.wardrobeEnabled ? 'checked' : ''}> <span>Использовать встроенный гардероб</span></label>
@@ -1276,6 +1333,7 @@ function bindSettingsUi(root) {
     root.querySelector('#bbcf-load-draft-models')?.addEventListener('click', () => loadDraftModels({ button: root.querySelector('#bbcf-load-draft-models') }));
     root.querySelector('#bbcf-test-draft-api')?.addEventListener('click', testDraftSettings);
     root.querySelector('#bbcf-open-wardrobe')?.addEventListener('click', openWardrobeModal);
+    bindWardrobeRecoveryButtons(root);
     root.querySelector('#bbcf-image-connection-profile')?.addEventListener('change', () => applyImageConnectionProfile(root));
     root.querySelector('#bbcf-save-image-connection-profile')?.addEventListener('click', () => saveImageConnectionProfile(root));
     root.querySelector('#bbcf-delete-image-connection-profile')?.addEventListener('click', () => deleteImageConnectionProfile(root));
@@ -1406,7 +1464,7 @@ function buildReferenceSettingsHtml(settings) {
     return settings.references.map(ref => `
         <div class="bbcf-ref-card" data-bbcf-ref="${escapeHtml(ref.id)}" tabindex="0">
             <div class="bbcf-ref-thumb ${ref.path ? 'has-image' : ''}">
-                ${ref.path ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}">` : '<i class="fa-solid fa-user"></i>'}
+                ${ref.path ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}" data-bbcf-ref-image>` : '<i class="fa-solid fa-user"></i>'}
             </div>
             <div class="bbcf-ref-main">
                 <label class="checkbox_label">
@@ -1508,7 +1566,10 @@ function renderWardrobeModal() {
                 <div class="bbcf-wardrobe-filter">
                     ${buildWardrobeCategoryFiltersHtml()}
                 </div>
-                <button type="button" class="menu_button bbcf-primary" id="bbcf-wardrobe-new"><i class="fa-solid fa-plus"></i><span>Новая вещь</span></button>
+                <div class="bbcf-wardrobe-library-actions">
+                    <button type="button" class="menu_button" data-bbcf-wardrobe-recover title="Найти гардеробные картинки без записи в библиотеке"><i class="fa-solid fa-rotate-left"></i><span>Восстановить</span></button>
+                    <button type="button" class="menu_button bbcf-primary" id="bbcf-wardrobe-new"><i class="fa-solid fa-plus"></i><span>Новая вещь</span></button>
+                </div>
             </div>
             ${buildWardrobeTagFiltersHtml(settings, owner.id)}
             ${state.wardrobeEditingId ? buildWardrobeEditorHtml(settings) : ''}
@@ -1628,6 +1689,7 @@ function buildWardrobeEditorHtml(settings) {
 
 function bindReferenceSettings(root) {
     root.querySelectorAll('.bbcf-ref-card').forEach(card => {
+        bindReferenceImageFallbacks(card);
         const id = card.getAttribute('data-bbcf-ref');
         if (!id) return;
         const fileInput = card.querySelector('.bbcf-ref-file');
@@ -1652,7 +1714,7 @@ function bindReferenceSettings(root) {
             try {
                 const dataUrl = await readFileAsDataUrl(file);
                 const path = await saveReferenceImageToFile(dataUrl, id);
-                const ref = updateReference(id, { path });
+                const ref = updateReference(id, { path }, { immediate: true });
                 syncReferenceCard(card, ref);
                 toastr.success('Референс сохранен.', 'Comic Forge');
             } catch (error) {
@@ -1663,7 +1725,7 @@ function bindReferenceSettings(root) {
             }
         });
         card.querySelector('.bbcf-ref-clear')?.addEventListener('click', () => {
-            const ref = updateReference(id, { path: '' });
+            const ref = updateReference(id, { path: '' }, { immediate: true });
             syncReferenceCard(card, ref);
             toastr.info('Референс очищен.', 'Comic Forge');
         });
@@ -1694,7 +1756,7 @@ async function pasteReferenceImageFromClipboard(id, card, button = null) {
 async function saveReferenceImageFile(file, id, card) {
     const dataUrl = await readFileAsDataUrl(file);
     const path = await saveReferenceImageToFile(dataUrl, id);
-    const ref = updateReference(id, { path });
+    const ref = updateReference(id, { path }, { immediate: true });
     syncReferenceCard(card, ref);
     toastr.success('Референс сохранён.', 'Comic Forge');
     return path;
@@ -1705,15 +1767,168 @@ function syncReferenceCard(card, ref) {
     const thumb = card.querySelector('.bbcf-ref-thumb');
     if (thumb) {
         thumb.classList.toggle('has-image', Boolean(ref.path));
+        thumb.classList.remove('is-broken');
+        thumb.removeAttribute('title');
         thumb.innerHTML = ref.path
-            ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}">`
+            ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}" data-bbcf-ref-image>`
             : '<i class="fa-solid fa-user"></i>';
+        bindReferenceImageFallbacks(card);
     }
     const clearButton = card.querySelector('.bbcf-ref-clear');
     if (clearButton) clearButton.disabled = !ref.path;
 }
 
+function bindReferenceImageFallbacks(root) {
+    root.querySelectorAll('[data-bbcf-ref-image]').forEach(image => {
+        if (image.dataset.bbcfErrorBound) return;
+        image.dataset.bbcfErrorBound = '1';
+        image.addEventListener('error', () => showBrokenReferenceThumb(image), { once: true });
+        if (image.complete && !image.naturalWidth) showBrokenReferenceThumb(image);
+    });
+}
+
+function showBrokenReferenceThumb(image) {
+    const thumb = image.closest('.bbcf-ref-thumb');
+    if (!thumb) return;
+    thumb.classList.remove('has-image');
+    thumb.classList.add('is-broken');
+    thumb.title = 'Файл референса не найден в хранилище SillyTavern.';
+    thumb.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+}
+
+function bindWardrobeRecoveryButtons(root) {
+    root.querySelectorAll('[data-bbcf-wardrobe-recover]').forEach(button => {
+        button.addEventListener('click', () => recoverWardrobeReferenceFiles(button));
+    });
+}
+
+async function recoverWardrobeReferenceFiles(button = null) {
+    try {
+        await withBusyButton(button, '<i class="fa-solid fa-spinner fa-spin"></i><span>Ищу...</span>', async () => {
+            const settings = getSettings();
+            const storedPaths = await listStoredReferenceImagePaths();
+            const knownPaths = getKnownStoredReferencePaths(settings);
+            const orphanWardrobePaths = storedPaths
+                .map(normalizeStoredImagePath)
+                .filter(path => isWardrobeUploadPath(path) && !knownPaths.has(path));
+            const imported = orphanWardrobePaths.map(path => buildRecoveredWardrobeItem(path));
+
+            if (imported.length) {
+                settings.wardrobeItems = normalizeWardrobeItems([...imported, ...settings.wardrobeItems]);
+                await saveSettingsImmediately();
+                refreshSettingsUi();
+                if (state.wardrobeModal?.isConnected) renderWardrobeModal();
+                toastr.success(`Восстановлено вещей: ${imported.length}.`, 'Comic Forge');
+            } else {
+                toastr.info('Новых гардеробных картинок не найдено.', 'Comic Forge');
+            }
+
+            const brokenPaths = getBrokenStoredReferencePaths(settings, storedPaths);
+            const brokenWardrobePaths = getBrokenWardrobeReferencePaths(settings, storedPaths);
+            if (brokenPaths.length) {
+                console.warn('[BB Comic Forge] stored reference paths point to missing files', brokenPaths);
+            }
+            if (brokenWardrobePaths.length) {
+                toastr.warning(`В гардеробе есть битые ссылки на файлы: ${brokenWardrobePaths.length}. Их можно вернуть только из бэкапа user/images.`, 'Comic Forge');
+            }
+        });
+    } catch (error) {
+        console.error('[BB Comic Forge] wardrobe recovery failed', error);
+        toastr.error(error?.message || String(error), 'Comic Forge');
+    }
+}
+
+async function listStoredReferenceImagePaths() {
+    const context = SillyTavern.getContext();
+    const response = await fetch('/api/images/list', {
+        method: 'POST',
+        headers: context.getRequestHeaders(),
+        body: JSON.stringify({
+            folder: 'bbcf_refs',
+            sortField: 'date',
+            sortOrder: 'desc',
+        }),
+    });
+    if (!response.ok) {
+        const raw = await response.text().catch(() => '');
+        throw new Error(raw || `Reference image scan failed: ${response.status}`);
+    }
+    const files = await response.json();
+    return (Array.isArray(files) ? files : [])
+        .map(file => normalizeStoredImagePath(`/user/images/bbcf_refs/${file}`))
+        .filter(isBbcfReferencePath);
+}
+
+function getKnownStoredReferencePaths(settings = getSettings()) {
+    const paths = new Set();
+    const addPath = value => {
+        const path = normalizeStoredImagePath(value);
+        if (path) paths.add(path);
+    };
+    normalizeReferences(settings.references).forEach(ref => addPath(ref.path));
+    Object.values(settings.referenceProfiles || {}).forEach(profile => {
+        normalizeReferences(profile).forEach(ref => addPath(ref.path));
+    });
+    normalizeWardrobeItems(settings.wardrobeItems).forEach(item => addPath(item.path));
+    return paths;
+}
+
+function getBrokenStoredReferencePaths(settings, storedPaths) {
+    const available = new Set(storedPaths.map(normalizeStoredImagePath));
+    return [...getKnownStoredReferencePaths(settings)]
+        .filter(path => isBbcfReferencePath(path) && !available.has(path));
+}
+
+function getBrokenWardrobeReferencePaths(settings, storedPaths) {
+    const available = new Set(storedPaths.map(normalizeStoredImagePath));
+    return normalizeWardrobeItems(settings.wardrobeItems)
+        .map(item => normalizeStoredImagePath(item.path))
+        .filter(path => isBbcfReferencePath(path) && !available.has(path));
+}
+
+function buildRecoveredWardrobeItem(path) {
+    const createdAt = parseBbcfUploadTimestamp(path) || Date.now();
+    const date = new Date(createdAt);
+    const label = Number.isFinite(date.getTime())
+        ? date.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+        : '';
+    return {
+        id: makeId('wardrobe-item'),
+        name: label ? `Восстановленный образ ${label}` : 'Восстановленный образ',
+        description: '',
+        path,
+        category: 'full',
+        target: 'all',
+        tags: ['восстановлено'],
+        favorite: false,
+        createdAt,
+    };
+}
+
+function parseBbcfUploadTimestamp(path) {
+    const fileName = String(path || '').split('/').pop() || '';
+    const match = fileName.match(/bbcf_ref_[a-z0-9_]+_(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2})-(\d{3})Z/i);
+    if (!match) return 0;
+    const timestamp = Date.parse(`${match[1]}:${match[2]}:${match[3]}.${match[4]}Z`);
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function normalizeStoredImagePath(path) {
+    const normalized = String(path || '').trim().replace(/\\/g, '/');
+    if (!normalized) return '';
+    return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
+function isBbcfReferencePath(path) {
+    return /^\/user\/images\/bbcf_refs\/[^/]+$/i.test(normalizeStoredImagePath(path));
+}
+
+function isWardrobeUploadPath(path) {
+    return /^\/user\/images\/bbcf_refs\/bbcf_ref_wardrobe_item_/i.test(normalizeStoredImagePath(path));
+}
+
 function bindWardrobeModalEvents(root) {
+    bindWardrobeRecoveryButtons(root);
     root.querySelectorAll('[data-bbcf-wardrobe-owner]').forEach(button => {
         button.addEventListener('click', () => {
             state.wardrobeOwner = button.getAttribute('data-bbcf-wardrobe-owner') || 'char';
@@ -1816,7 +2031,7 @@ function bindWardrobeEditor(root) {
             const dataUrl = await readFileAsDataUrl(file);
             const path = await saveReferenceImageToFile(dataUrl, 'wardrobe_item');
             if (state.wardrobeEditingId && state.wardrobeEditingId !== 'new') {
-                updateWardrobeItem(state.wardrobeEditingId, { path });
+                updateWardrobeItem(state.wardrobeEditingId, { path }, { immediate: true });
             } else {
                 state.wardrobeTempPath = path;
             }
@@ -1859,7 +2074,7 @@ async function saveWardrobeEditorImageFile(file) {
     const dataUrl = await readFileAsDataUrl(file);
     const path = await saveReferenceImageToFile(dataUrl, 'wardrobe_item');
     if (state.wardrobeEditingId && state.wardrobeEditingId !== 'new') {
-        updateWardrobeItem(state.wardrobeEditingId, { path });
+        updateWardrobeItem(state.wardrobeEditingId, { path }, { immediate: true });
     } else {
         state.wardrobeTempPath = path;
     }
@@ -1867,22 +2082,24 @@ async function saveWardrobeEditorImageFile(file) {
     return path;
 }
 
-function updateReference(id, patch) {
+function updateReference(id, patch, options = {}) {
     const settings = getSettings();
     const ref = settings.references.find(item => item.id === id);
     if (!ref) return null;
     Object.assign(ref, patch);
     settings.referenceProfiles[getReferenceProfileKey()] = structuredClone(settings.references);
-    saveSettings();
+    if (options.immediate) void saveSettingsImmediately();
+    else saveSettings();
     return ref;
 }
 
-function updateWardrobeItem(id, patch) {
+function updateWardrobeItem(id, patch, options = {}) {
     const settings = getSettings();
     const item = settings.wardrobeItems.find(entry => entry.id === id);
     if (!item) return;
     Object.assign(item, patch);
-    saveSettings();
+    if (options.immediate) void saveSettingsImmediately();
+    else saveSettings();
 }
 
 function saveWardrobeEditor(form) {
@@ -1913,7 +2130,7 @@ function saveWardrobeEditor(form) {
     }
     state.wardrobeEditingId = null;
     state.wardrobeTempPath = '';
-    saveSettings();
+    void saveSettingsImmediately();
     refreshSettingsUi();
 }
 
@@ -3162,18 +3379,32 @@ function updateFloatingButton() {
     button.classList.toggle('bbcf-generating', state.generating);
     button.classList.toggle('bbcf-ready', Boolean(state.pendingComic?.html && !state.pendingComic.sent));
     button.classList.toggle('bbcf-chat-launcher', host !== document.body);
-    if (button.parentElement !== host) host.appendChild(button);
+    placeChatLauncherButton(button, host);
 }
 
 function findChatButtonHost() {
-    return document.querySelector('#leftSendForm')
-        || document.querySelector('#rightSendForm')
-        || document.querySelector('#send_but_sheld')
-        || document.querySelector('#send_form .form_actions')
-        || document.querySelector('#send_form')
-        || document.querySelector('#form_sheld')
-        || document.querySelector('#send_textarea')?.parentElement
+    return document.getElementById('options_button')?.parentElement
+        || document.getElementById('send_form')?.parentElement
         || document.body;
+}
+
+function placeChatLauncherButton(button, host) {
+    const optionsButton = document.getElementById('options_button');
+    if (optionsButton?.parentElement === host) {
+        const next = optionsButton.nextSibling;
+        if (button.parentElement !== host || button.previousSibling !== optionsButton) {
+            host.insertBefore(button, next);
+        }
+        return;
+    }
+    const sendForm = document.getElementById('send_form');
+    if (sendForm?.parentElement === host) {
+        if (button.parentElement !== host || button.nextSibling !== sendForm) {
+            host.insertBefore(button, sendForm);
+        }
+        return;
+    }
+    if (button.parentElement !== host) host.appendChild(button);
 }
 
 function openForgeModal(options = {}) {
@@ -6706,6 +6937,26 @@ function getCharacterLockProfileKey() {
 
 function getSavedDraftProfileKey() {
     return getScopedProfileKey();
+}
+
+function getScopedProfileFallbackKeys() {
+    const context = SillyTavern.getContext();
+    const keys = [];
+    const groupId = context.groupId ?? context.group_id ?? context.selected_group;
+    const group = groupId !== undefined && groupId !== null && groupId !== ''
+        ? (Array.isArray(context.groups) ? context.groups.find(item => String(item?.id) === String(groupId)) : null)
+        : null;
+    const character = context.characterId !== undefined ? context.characters?.[context.characterId] : null;
+    if (groupId !== undefined && groupId !== null && groupId !== '') {
+        keys.push(`group:${safeProfilePart(groupId)}:${safeProfilePart(group?.name || context.name2 || 'group')}`);
+    }
+    if (character) {
+        const stableId = character.avatar || character.name || context.characterId;
+        keys.push(`character:${safeProfilePart(stableId)}:${safeProfilePart(character.name || context.name2 || 'character')}`);
+    }
+    keys.push(`chat:${safeProfilePart(context.name2 || 'global')}`);
+    keys.push('legacy:unscoped');
+    return [...new Set(keys)];
 }
 
 function getScopedProfileKey() {

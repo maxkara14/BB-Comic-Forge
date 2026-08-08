@@ -140,6 +140,21 @@
     text-overflow: ellipsis;
 }
 
+#bbcf-settings .bbcf-wardrobe-head-actions,
+.bbcf-wardrobe-library-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+}
+
+#bbcf-settings .bbcf-wardrobe-head-actions .menu_button,
+.bbcf-wardrobe-library-actions .menu_button {
+    flex: 0 0 auto;
+    max-width: 100%;
+}
+
 #bbcf-settings .bbcf-wardrobe-head h5 {
     display: flex;
     align-items: center;
@@ -230,6 +245,16 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+
+#bbcf-settings .bbcf-ref-thumb.is-broken {
+    color: #ffb86b;
+    border-color: rgba(255, 184, 107, 0.35);
+    background: rgba(255, 184, 107, 0.08);
+}
+
+#bbcf-settings .bbcf-ref-thumb.is-broken i {
+    font-size: 20px;
 }
 
 #bbcf-settings .bbcf-ref-main {
@@ -323,10 +348,13 @@
 }
 
 #bbcf-open-fab.bbcf-chat-launcher {
-    position: static;
+    position: relative;
     right: auto;
     bottom: auto;
-    z-index: auto;
+    z-index: 1001;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 auto;
     align-self: center;
     width: 26px;
@@ -335,7 +363,7 @@
     min-height: 26px;
     max-height: 26px;
     padding: 0;
-    margin: 0 2px;
+    margin: 0;
     transform: translate(-5px, -2px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     vertical-align: middle;
@@ -1977,6 +2005,16 @@ body.bbcf-lightbox-open {
     #bbcf-settings .bbcf-wardrobe-head {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    #bbcf-settings .bbcf-wardrobe-head-actions,
+    .bbcf-wardrobe-library-actions {
+        justify-content: stretch;
+    }
+
+    #bbcf-settings .bbcf-wardrobe-head-actions .menu_button,
+    .bbcf-wardrobe-library-actions .menu_button {
+        flex: 1 1 140px;
     }
 
     .bbcf-wardrobe-items {
