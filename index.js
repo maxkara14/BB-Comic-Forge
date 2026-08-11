@@ -157,6 +157,7 @@ const DEFAULT_SETTINGS = {
     defaultInserts: '',
     defaultSfx: '',
     contextMessages: 4,
+    injectChatContextToImagePrompt: false,
     previousImageCount: 0,
     draftPrompt: DEFAULT_DRAFT_PROMPT,
     draftConnectionMode: 'sillytavern',
@@ -480,6 +481,7 @@ function getSettings() {
     settings.concurrency = clampInt(settings.concurrency, 1, MAX_CONCURRENCY, DEFAULT_SETTINGS.concurrency);
     settings.requestCooldownMs = clampInt(settings.requestCooldownMs, 0, 600000, DEFAULT_SETTINGS.requestCooldownMs);
     settings.contextMessages = clampInt(settings.contextMessages, 0, 20, DEFAULT_SETTINGS.contextMessages);
+    settings.injectChatContextToImagePrompt = settings.injectChatContextToImagePrompt === true;
     settings.previousImageCount = clampInt(settings.previousImageCount, 0, MAX_PREVIOUS_CONTEXT_IMAGES, DEFAULT_SETTINGS.previousImageCount);
     settings.timeoutMs = clampInt(settings.timeoutMs, 30000, 600000, DEFAULT_SETTINGS.timeoutMs);
     if (!DRAFT_CONNECTION_MODES.includes(settings.draftConnectionMode)) settings.draftConnectionMode = DEFAULT_SETTINGS.draftConnectionMode;
@@ -1216,6 +1218,10 @@ function createSettingsUi() {
                             <input id="bbcf-previous-image-count" class="text_pole" type="number" min="0" max="${MAX_PREVIOUS_CONTEXT_IMAGES}" value="${settings.previousImageCount}">
                         </div>
                     </div>
+                    <label class="checkbox_label bbcf-settings-checkbox">
+                        <input type="checkbox" id="bbcf-inject-chat-context-image" ${settings.injectChatContextToImagePrompt ? 'checked' : ''}>
+                        <span>Добавлять контекст сообщений в prompt изображения</span>
+                    </label>
                     <div class="bbcf-grid-2">
                         <div class="bbcf-row">
                             <label for="bbcf-layout">Макет</label>
@@ -1389,6 +1395,7 @@ function bindSettingsUi(root) {
     bindSettingInput(root, '#bbcf-panel-count', 'panelCount', 'int', () => syncDefaultDraftField('panelCount'));
     bindSettingInput(root, '#bbcf-concurrency', 'concurrency', 'int');
     bindSettingInput(root, '#bbcf-context-messages', 'contextMessages', 'int');
+    bindSettingInput(root, '#bbcf-inject-chat-context-image', 'injectChatContextToImagePrompt', 'checked');
     bindSettingInput(root, '#bbcf-previous-image-count', 'previousImageCount', 'int');
     bindSettingInput(root, '#bbcf-layout', 'layout', 'value', () => syncDefaultDraftField('layout'));
     bindSettingInput(root, '#bbcf-style-preset', 'stylePreset', 'value', () => syncDefaultDraftField('stylePreset'));
@@ -1419,6 +1426,7 @@ function resetDefaultPageSettings(root) {
     settings.concurrency = defaults.concurrency;
     settings.requestCooldownMs = defaults.requestCooldownMs;
     settings.contextMessages = defaults.contextMessages;
+    settings.injectChatContextToImagePrompt = defaults.injectChatContextToImagePrompt;
     settings.previousImageCount = defaults.previousImageCount;
     settings.layout = defaults.layout;
     settings.stylePreset = defaults.stylePreset;
@@ -1437,6 +1445,7 @@ function resetDefaultPageSettings(root) {
     setSettingsControlValue(root, '#bbcf-concurrency', settings.concurrency);
     setSettingsControlValue(root, '#bbcf-cooldown', Math.round(settings.requestCooldownMs / 1000));
     setSettingsControlValue(root, '#bbcf-context-messages', settings.contextMessages);
+    setSettingsControlValue(root, '#bbcf-inject-chat-context-image', settings.injectChatContextToImagePrompt);
     setSettingsControlValue(root, '#bbcf-previous-image-count', settings.previousImageCount);
     setSettingsControlValue(root, '#bbcf-layout', settings.layout);
     setSettingsControlValue(root, '#bbcf-style-preset', settings.stylePreset);
@@ -1458,6 +1467,10 @@ function resetDefaultPageSettings(root) {
 function setSettingsControlValue(root, selector, value) {
     const input = root?.querySelector?.(selector);
     if (!input) return;
+    if (input instanceof HTMLInputElement && input.type === 'checkbox') {
+        input.checked = Boolean(value);
+        return;
+    }
     input.value = String(value ?? '');
 }
 
@@ -3583,6 +3596,19 @@ function openForgeModal(options = {}) {
                         <button class="menu_button bbcf-hidden" type="button" id="bbcf-close-history-preview"><i class="fa-solid fa-arrow-left"></i><span>К текущему превью</span></button>
                         <button class="menu_button" type="button" id="bbcf-clear-preview" title="Очистить текущее превью"><i class="fa-solid fa-eraser"></i><span>Очистить превью</span></button>
                     </div>
+                    <details class="bbcf-final-prompt" id="bbcf-final-prompt-details">
+                        <summary><i class="fa-solid fa-terminal"></i><span>Prompt изображения</span></summary>
+                        <div class="bbcf-final-prompt-body">
+                            <div class="bbcf-final-prompt-actions">
+                                <button class="menu_button" type="button" id="bbcf-refresh-final-prompt"><i class="fa-solid fa-rotate"></i><span>Обновить</span></button>
+                                <button class="menu_button" type="button" id="bbcf-copy-final-prompt"><i class="fa-solid fa-copy"></i><span>Копировать всё</span></button>
+                            </div>
+                            <div class="bbcf-final-prompt-note">Показывает текстовый prompt image-запроса. Референс-картинки прикладываются отдельно, если провайдер их поддерживает.</div>
+                            <div id="bbcf-final-prompt-list" class="bbcf-final-prompt-list">
+                                <pre class="bbcf-final-prompt-placeholder">Открой блок, чтобы собрать prompt изображения из текущего черновика.</pre>
+                            </div>
+                        </div>
+                    </details>
                     <div id="bbcf-history-panel" class="bbcf-history bbcf-hidden"></div>
                     <div id="bbcf-progress" class="bbcf-progress"></div>
                     <div id="bbcf-preview-content">
@@ -3598,6 +3624,7 @@ function openForgeModal(options = {}) {
     root.querySelector('#bbcf-modal-minimize')?.addEventListener('click', minimizeForgeModal);
     bindDraftPersistence(root);
     bindComicUtilityActions(root);
+    bindFinalPromptPreview(root);
     renderComicHistory(root);
     if (state.pendingComic?.html && !state.pendingComic.sent) {
         const preview = root.querySelector('#bbcf-preview-content');
@@ -4424,7 +4451,9 @@ function buildPanelPlans(draft) {
     const stylePrompt = buildStylePrompt(draft.stylePreset, draft.customPrompt ?? draft.customStyle);
     const layout = draft.layout || getSettings().layout;
     const panelCount = clampInt(draft.panelCount, 1, MAX_PANELS, getSettings().panelCount);
-    const recentContext = collectRecentChat(getSettings().contextMessages);
+    const recentContext = getSettings().injectChatContextToImagePrompt
+        ? collectRecentChat(getSettings().contextMessages)
+        : '';
     const referenceLock = buildReferencePromptBlock();
     const wardrobeLock = buildWardrobePromptBlock();
     const plans = [];
@@ -4480,7 +4509,10 @@ function buildSinglePagePanel(draft, plans) {
     const settings = getSettings();
     const referenceLock = buildReferencePromptBlock();
     const wardrobeLock = buildWardrobePromptBlock();
-    const panelDescriptions = plans.map(panel => `Panel ${panel.number}: ${panel.prompt}`).join('\n\n');
+    const recentContext = settings.injectChatContextToImagePrompt
+        ? collectRecentChat(settings.contextMessages)
+        : '';
+    const panelDescriptions = buildSinglePagePanelPlan(draft, plans);
     const bubbles = parseBubbles(draft.bubbles);
     const bubbleLines = [];
     for (const [panelNumber, items] of bubbles.entries()) {
@@ -4499,6 +4531,7 @@ function buildSinglePagePanel(draft, plans) {
         draft.characterLock ? `Permanent character lock for every panel: ${draft.characterLock}` : '',
         referenceLock,
         wardrobeLock,
+        recentContext ? `Recent chat context for page continuity: ${recentContext}` : '',
         `Panel plan:\n${panelDescriptions}`,
         insertLines.length ? `Integrate these small bordered overlay inserts inside the correct panels. They are part of the drawn page composition, not separate images:\n${insertLines.join('\n')}` : '',
         bubbleLines.length ? `Draw these Russian speech or thought bubbles inside the correct panels:\n${bubbleLines.join('\n')}` : '',
@@ -4520,6 +4553,19 @@ function buildSinglePagePanel(draft, plans) {
         sfx: '',
         singlePage: true,
     };
+}
+
+function buildSinglePagePanelPlan(draft, plans) {
+    const notes = splitLines(draft.panelNotes);
+    const layout = draft.layout || getSettings().layout;
+    const total = plans.length || clampInt(draft.panelCount, 1, MAX_PANELS, getSettings().panelCount);
+
+    return Array.from({ length: total }, (_, index) => {
+        const number = index + 1;
+        const beat = normalizePanelNote(notes[index]) || DEFAULT_PANEL_BEATS[index % DEFAULT_PANEL_BEATS.length];
+        const layoutIntent = describeLayoutIntent(layout, number, total);
+        return `Panel ${number}: ${beat}\nLayout intent: ${layoutIntent}.`;
+    }).join('\n\n');
 }
 
 function getSinglePageAspectRatio(layout) {
@@ -5873,6 +5919,110 @@ function bindComicUtilityActions(root) {
     root.querySelector('#bbcf-clear-preview')?.addEventListener('click', () => {
         clearForgePreview(root);
     });
+}
+
+function bindFinalPromptPreview(root) {
+    const details = root.querySelector('#bbcf-final-prompt-details');
+    updateFinalPromptCopyAllVisibility(root);
+    details?.addEventListener('toggle', () => {
+        if (details.open) renderFinalPromptPreview(root);
+    });
+
+    root.querySelector('#bbcf-draft-mode')?.addEventListener('change', () => {
+        updateFinalPromptCopyAllVisibility(root);
+        if (details?.open) renderFinalPromptPreview(root);
+    });
+
+    root.querySelector('#bbcf-refresh-final-prompt')?.addEventListener('click', () => {
+        renderFinalPromptPreview(root);
+    });
+
+    root.querySelector('#bbcf-copy-final-prompt')?.addEventListener('click', async () => {
+        const items = renderFinalPromptPreview(root);
+        const text = joinFinalPromptPreviewItems(items);
+        if (!text) return;
+        await copyText(text);
+        toastr.success('Prompt изображения скопирован.', 'Comic Forge');
+    });
+
+    root.querySelector('#bbcf-final-prompt-list')?.addEventListener('click', async (event) => {
+        const button = event.target?.closest?.('[data-bbcf-copy-image-prompt]');
+        if (!button) return;
+        const items = root.bbcfFinalPromptItems || renderFinalPromptPreview(root);
+        const index = Number(button.getAttribute('data-bbcf-copy-image-prompt'));
+        const item = items[index];
+        if (!item?.text) return;
+        await copyText(item.text);
+        toastr.success(`${item.label} скопирован.`, 'Comic Forge');
+    });
+}
+
+function updateFinalPromptCopyAllVisibility(root, draft = readDraftFromModal(root)) {
+    const button = root?.querySelector('#bbcf-copy-final-prompt');
+    if (!button) return;
+    button.classList.toggle('bbcf-hidden', draft.generationMode === 'single');
+}
+
+function renderFinalPromptPreview(root) {
+    const list = root?.querySelector('#bbcf-final-prompt-list');
+    if (!list) return [];
+
+    try {
+        updateFinalPromptCopyAllVisibility(root);
+        const items = buildFinalPromptPreviewItems(root);
+        root.bbcfFinalPromptItems = items;
+        if (!items.length) {
+            list.innerHTML = '<pre class="bbcf-final-prompt-placeholder">Prompt изображения пустой.</pre>';
+            return items;
+        }
+        list.innerHTML = items.map((item, index) => `
+            <article class="bbcf-final-prompt-card">
+                <div class="bbcf-final-prompt-card-head">
+                    <b>${escapeHtml(item.label)}</b>
+                    <button class="menu_button" type="button" data-bbcf-copy-image-prompt="${index}"><i class="fa-solid fa-copy"></i><span>Копировать</span></button>
+                </div>
+                <pre>${escapeHtml(item.text)}</pre>
+            </article>
+        `).join('');
+        return items;
+    } catch (error) {
+        console.warn('[BB Comic Forge] final prompt preview failed', error);
+        list.innerHTML = `<pre class="bbcf-final-prompt-placeholder">Не удалось собрать prompt изображения: ${escapeHtml(error?.message || String(error))}</pre>`;
+        return [];
+    }
+}
+
+function buildFinalPromptPreviewItems(root) {
+    const draft = readDraftFromModal(root);
+    const settings = getSettings();
+    const plans = buildPanelPlans(draft);
+    const prompts = draft.generationMode === 'single'
+        ? [buildSinglePagePanel(draft, plans)]
+        : plans;
+
+    return prompts.map(panel => ({
+        label: panel.singlePage ? 'Страница целиком' : `Панель ${panel.number}`,
+        text: buildProviderPromptPreview(panel, settings),
+    }));
+}
+
+function joinFinalPromptPreviewItems(items = []) {
+    if (!items.length) return '';
+    if (items.length === 1) return items[0].text || '';
+    return items
+        .map(item => `### ${item.label}\n${item.text || ''}`)
+        .join('\n\n---\n\n');
+}
+
+function buildProviderPromptPreview(panel, settings) {
+    const prompt = buildFullPrompt(panel);
+    if (settings.apiType === 'openai-images') {
+        return `${prompt}\n\nAspect ratio target: ${panel.aspectRatio}.`;
+    }
+    if (settings.apiType === 'openai-chat') {
+        return `${prompt}\n\n[aspect_ratio: ${panel.aspectRatio}] [image_size: ${panel.imageSize || settings.imageSize}]`;
+    }
+    return prompt;
 }
 
 async function sendPendingComicToChat(root, { targetMessageId = null } = {}) {
