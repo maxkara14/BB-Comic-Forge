@@ -69,8 +69,19 @@ const STYLE_PRESETS = {
 };
 
 const DEFAULT_NEGATIVE_PROMPT = 'low quality, blurry, noisy, jpeg artifacts, bad anatomy, extra limbs, malformed hands, unreadable text, fake letters, watermark, logo, signature, cluttered panel, broken face, inconsistent character design';
+const DRAFT_CAST_DIALOGUE_RULES = [
+    '- Before writing JSON, identify every story-active participant from the recent chat.',
+    '- Include every story-active participant in character_lock with stable visible continuity details.',
+    '- Every panel note must explicitly name every character visible in that panel; do not rely only on pronouns or generic labels.',
+    '- Each story-active participant must appear in at least one panel unless they are intentionally off-panel; if off-panel, state that clearly in scene or the relevant panel note.',
+    '- Do not force every participant into every panel. Preserve close-ups, reaction shots, detail shots, and readable composition.',
+    '- Every speech or thought bubble must include a "speaker" field using the character name from character_lock.',
+    '- The speaker field is metadata for composition and must never be repeated inside the visible bubble text.',
+    '- When multiple bubbles are used, they must form one coherent exchange anchored in the latest roleplay beat, not isolated generic phrases.',
+    '- Each later bubble must respond to, clarify, challenge, or advance an earlier line or visible action.',
+].join('\n');
 const DEFAULT_DRAFT_PROMPT = `<task>
-Create a concise comic page draft from the roleplay context.
+Create a compact but visually specific comic page draft from the roleplay context.
 </task>
 
 <context>
@@ -91,11 +102,31 @@ Current character card:
 - Output only valid JSON, no markdown.
 - The comic page must continue the current story with continuity.
 - Use {{panel_count}} panels.
-- Bubble text must be in Russian, 4 to 8 words per bubble.
-- Use 2 to 4 bubbles total.
-- Add at least 2 overlay inserts total.
-- Include exactly 1 chibi insert for the whole comic page: use the user persona or the current character as a tiny comedic reaction that summarizes the situation, plot beat, or emotional moment.
-- Include at least 1 detail insert focused on something important inside a panel: hands, lips, eyes, weapons, objects, symbols, clues, impact contact, or a decisive action emphasis.
+- Keep the draft detailed enough for image generation, but not bloated.
+- Write scene as 1 to 2 compact sentences.
+- Write character_lock as 1 compact paragraph.
+- Write each panel note as 1 complete but compact sentence.
+- Visual descriptions may be in English for better image generation.
+- Bubble text, SFX, signs, labels, and any visible text inside inserts must be in Russian only.
+- Do not include translations, bilingual text, or parenthetical explanations for Russian phrases.
+- Preserve known character appearance, outfit, injuries, accessories, species traits, powers, weapons, and relationship continuity from the context.
+- character_lock must focus on stable visible traits: hair, eyes, face, body type, outfit, accessories, injuries, species traits, weapons, and other important continuity details.
+- Put current emotion, pose, interaction, and relationship tension in scene and panel_notes rather than treating them as permanent character traits.
+- If an appearance detail is unknown, do not invent a precise new design; describe only what is known and keep the rest consistent with the context.
+- scene must include location, atmosphere, lighting, emotional tone, the main story beat, and who is present.
+- Each panel note must include camera or framing, explicitly named visible characters, action, expression or body language, and one important background or prop detail.
+- Do not include panel numbers or labels like "panel 1:" inside panel_notes. The array order already defines the panel number.
+- Use comic-friendly visual storytelling appropriate to the selected style when useful: establishing shots, close-ups, reaction shots, dramatic pauses, expressive body language, symbolic details, impact frames, and visual timing.
+- Bubble text must be in Russian, usually 4 to 12 words per bubble; allow up to 16 only for plot-critical clarity.
+- Use up to 4 bubbles total.
+- If the recent context contains dialogue, preserve its intent and turn it into a coherent exchange.
+- Do not invent dialogue merely to fill a bubble quota.
+${DRAFT_CAST_DIALOGUE_RULES}
+- Use 1 to 2 overlay inserts when they improve storytelling.
+- When inserts are used, include at least 1 detail insert focused on something important inside a panel: hands, lips, eyes, weapons, objects, symbols, clues, impact contact, clothing detail, or a decisive action emphasis.
+- Use a chibi insert only when it fits the scene tone. If used, base it on the user persona or the current character as a tiny comedic reaction to the situation, plot beat, or emotional moment.
+- For serious, tense, or tragic scenes, prefer a reaction or detail insert instead of forcing a chibi gag.
+- Insert descriptions may be in English, but any quoted visible text inside the image must be Russian only.
 - Place inserts only where they improve readability and do not overcrowd the panel.
 - Do not write explicit sexual content.
 </rules>
@@ -103,18 +134,20 @@ Current character card:
 <format>
 {
   "title": "short page title",
-  "scene": "page-level visual scene summary for image generation",
-  "character_lock": "stable character descriptions and continuity notes",
-  "panel_notes": ["panel 1 visual beat", "panel 2 visual beat"],
+  "scene": "compact visual summary: location, lighting, mood, main story beat, and who is present",
+  "character_lock": "compact stable visual notes for important participants: appearance, outfit, injuries, accessories, and continuity details",
+  "panel_notes": [
+    "Wide establishing shot of the named characters entering a rain-soaked station, guarded posture, cold fluorescent lighting, abandoned luggage near the platform edge",
+    "Tight reaction shot on the named speaker turning toward their companion, restrained fear in their eyes, one hand gripping a damaged radio"
+  ],
   "bubbles": [
-    { "panel": 1, "type": "speech", "position": "top-left", "text": "Русская реплика здесь" }
+    { "panel": 1, "type": "speech", "position": "top-left", "speaker": "Character name", "text": "Русская реплика здесь" }
   ],
   "sfx": [
-    { "panel": 3, "text": "БАХ" }
+    { "panel": 1, "text": "БАХ" }
   ],
   "inserts": [
-    { "panel": 3, "type": "detail", "position": "bottom-left", "text": "small bordered close-up of tense fingers gripping fabric" },
-    { "panel": 4, "type": "chibi", "position": "bottom-right", "text": "tiny angry chibi reaction sticker holding a sign" }
+    { "panel": 1, "type": "detail", "position": "bottom-left", "text": "small bordered close-up of tense fingers gripping black fabric" }
   ]
 }
 </format>`;
@@ -635,7 +668,27 @@ function migrateDraftPrompt(value) {
         '- Include at least 1 detail insert focused on something important inside a panel: hands, lips, eyes, weapons, objects, symbols, clues, impact contact, or a decisive action emphasis.',
         '- Place inserts only where they improve readability and do not overcrowd the panel.',
     ].join('\n');
-    let prompt = String(value || DEFAULT_DRAFT_PROMPT);
+    const rawPrompt = String(value || '');
+    const isLegacyDefaultPrompt = rawPrompt.includes('Create a concise comic page draft from the roleplay context.')
+        && rawPrompt.includes('"scene": "page-level visual scene summary for image generation"')
+        && rawPrompt.includes('"panel_notes": ["panel 1 visual beat", "panel 2 visual beat"]');
+    let prompt = isLegacyDefaultPrompt ? DEFAULT_DRAFT_PROMPT : String(value || DEFAULT_DRAFT_PROMPT);
+    prompt = prompt.replace(
+        '- Bubble text must be in Russian, 4 to 8 words per bubble.',
+        '- Bubble text must be in Russian, usually 4 to 12 words per bubble; allow up to 16 only for plot-critical clarity.',
+    );
+    if (prompt.includes('<rules>') && prompt.includes('"bubbles"') && !prompt.includes('- Every speech or thought bubble must include a "speaker" field')) {
+        prompt = prompt.replace('</rules>', `${DRAFT_CAST_DIALOGUE_RULES}\n</rules>`);
+    }
+    if (prompt.includes('"bubbles"') && !/"speaker"\s*:/.test(prompt)) {
+        const bubbleSectionIndex = prompt.indexOf('"bubbles"');
+        const prefix = prompt.slice(0, bubbleSectionIndex);
+        const bubbleSection = prompt.slice(bubbleSectionIndex).replace(
+            /("position"\s*:\s*"[^"]+"\s*,)\s*("text"\s*:)/,
+            '$1 "speaker": "Character name", $2',
+        );
+        prompt = `${prefix}${bubbleSection}`;
+    }
     if (prompt.includes(oldInsertRules)) {
         prompt = prompt.replace(oldInsertRules, newInsertRules);
     }
@@ -1298,8 +1351,8 @@ function createSettingsUi() {
                         <textarea id="bbcf-default-panel-notes" class="text_pole" rows="4" placeholder="1. Общий план&#10;2. Реакция героя&#10;3. Деталь или вставка">${escapeHtml(settings.defaultPanelNotes)}</textarea>
                     </div>
                     <div class="bbcf-field">
-                        <label for="bbcf-default-bubbles">Реплики по умолчанию: panel | type | position | text</label>
-                        <textarea id="bbcf-default-bubbles" class="text_pole" rows="3" placeholder="1|speech|top-left|Ты правда это сказала?">${escapeHtml(settings.defaultBubbles)}</textarea>
+                        <label for="bbcf-default-bubbles">Реплики по умолчанию: panel | type | position | speaker | text</label>
+                        <textarea id="bbcf-default-bubbles" class="text_pole" rows="3" placeholder="1|speech|top-left|Dr. Miyamoto|Ты правда это сказала?">${escapeHtml(settings.defaultBubbles)}</textarea>
                     </div>
                     <div class="bbcf-field">
                         <label for="bbcf-default-inserts">Вставки по умолчанию: panel | type | position | text</label>
@@ -3546,8 +3599,8 @@ function openForgeModal(options = {}) {
                         <textarea id="bbcf-draft-notes" class="text_pole" rows="5" placeholder="1. Общий план коридора&#10;2. Крупный план лица&#10;3. Комедийный insert">${escapeHtml(savedDraft.panelNotes)}</textarea>
                     </div>
                     <div class="bbcf-field">
-                        <label for="bbcf-draft-bubbles">Реплики для модели: panel | type | position | text</label>
-                        <textarea id="bbcf-draft-bubbles" class="text_pole" rows="4" placeholder="1|speech|top-left|Ты правда это сказала?&#10;2|thought|bottom-right|Сердце сбилось с ритма">${escapeHtml(savedDraft.bubbles)}</textarea>
+                        <label for="bbcf-draft-bubbles">Реплики для модели: panel | type | position | speaker | text</label>
+                        <textarea id="bbcf-draft-bubbles" class="text_pole" rows="4" placeholder="1|speech|top-left|Dr. Miyamoto|Ты правда это сказала?&#10;2|thought|bottom-right|Akiko|Сердце сбилось с ритма">${escapeHtml(savedDraft.bubbles)}</textarea>
                     </div>
                     <div class="bbcf-field">
                         <label for="bbcf-draft-inserts">Вставки: panel | type | position | text</label>
@@ -4261,7 +4314,11 @@ function applyAiDraft(root, draft) {
             const panel = clampInt(bubble?.panel, 1, MAX_PANELS, 1);
             const type = normalizeBubbleType(bubble?.type);
             const position = normalizeBubblePosition(bubble?.position, 'top-left');
-            return `${panel}|${type}|${position}|${bubble?.text || ''}`;
+            const speaker = String(bubble?.speaker || '').trim();
+            const text = String(bubble?.text || '').trim();
+            return speaker
+                ? `${panel}|${type}|${position}|${speaker}|${text}`
+                : `${panel}|${type}|${position}|${text}`;
         }).filter(line => line.trim()).join('\n');
         setValue(root, '#bbcf-draft-bubbles', bubbleText);
     }
@@ -4465,7 +4522,7 @@ function buildPanelPlans(draft) {
         const insertPrompt = buildPanelInsertPrompt(panelInserts);
         const panelBubbles = bubbleMap.get(number) || [];
         const bubblePrompt = panelBubbles.length
-            ? `Draw and letter these Russian speech or thought bubbles directly inside this panel. Place them naturally around the composition, match the page style, and keep the lettering clean and readable:\n${panelBubbles.map(bubble => `${bubble.type}: ${bubble.text}`).join('\n')}`
+            ? `Draw and letter these Russian speech or thought bubbles directly inside this panel. Attribute each bubble to its named speaker, attach speech tails to the correct character, visually associate thought bubbles with their character, and keep the lettering clean and readable. Speaker names are composition metadata only: never render them as labels or visible text:\n${panelBubbles.map(bubble => `${bubble.type}${bubble.speaker ? `, speaker ${bubble.speaker}` : ''}: ${bubble.text}`).join('\n')}`
             : '';
         const panelSfx = sfxMap.get(number) || '';
         const sfxPrompt = panelSfx
@@ -4516,7 +4573,7 @@ function buildSinglePagePanel(draft, plans) {
     const bubbles = parseBubbles(draft.bubbles);
     const bubbleLines = [];
     for (const [panelNumber, items] of bubbles.entries()) {
-        for (const bubble of items) bubbleLines.push(`Panel ${panelNumber} ${bubble.type}: ${bubble.text}`);
+        for (const bubble of items) bubbleLines.push(`Panel ${panelNumber} ${bubble.type}${bubble.speaker ? `, speaker ${bubble.speaker}` : ''}: ${bubble.text}`);
     }
     const sfx = parseSfx(draft.sfx);
     const sfxLines = Array.from(sfx.entries()).map(([panelNumber, text]) => `Panel ${panelNumber} SFX: ${text}`);
@@ -4534,7 +4591,7 @@ function buildSinglePagePanel(draft, plans) {
         recentContext ? `Recent chat context for page continuity: ${recentContext}` : '',
         `Panel plan:\n${panelDescriptions}`,
         insertLines.length ? `Integrate these small bordered overlay inserts inside the correct panels. They are part of the drawn page composition, not separate images:\n${insertLines.join('\n')}` : '',
-        bubbleLines.length ? `Draw these Russian speech or thought bubbles inside the correct panels:\n${bubbleLines.join('\n')}` : '',
+        bubbleLines.length ? `Draw these Russian speech or thought bubbles inside the correct panels. Use speaker names only to attach each bubble to the correct character; never render speaker names as labels or visible text:\n${bubbleLines.join('\n')}` : '',
         sfxLines.length ? `Draw these sound effects in the correct panels:\n${sfxLines.join('\n')}` : '',
         `Keep character identities, outfits, hair state, marks, mood, lighting, and environment continuous across all panels.`,
         `Avoid signatures, watermarks, unrelated text, UI, and broken unreadable lettering.`,
@@ -4621,8 +4678,15 @@ function parseBubbles(text) {
         let panel = 1;
         let type = 'speech';
         let position = BUBBLE_POSITIONS[autoIndex % BUBBLE_POSITIONS.length];
+        let speaker = '';
         let bubbleText = line;
-        if (parts.length >= 4) {
+        if (parts.length >= 5) {
+            panel = clampInt(parts[0], 1, MAX_PANELS, 1);
+            type = normalizeBubbleType(parts[1]);
+            position = normalizeBubblePosition(parts[2], position);
+            speaker = parts[3];
+            bubbleText = parts.slice(4).join('|').trim();
+        } else if (parts.length >= 4) {
             panel = clampInt(parts[0], 1, MAX_PANELS, 1);
             type = normalizeBubbleType(parts[1]);
             position = normalizeBubblePosition(parts[2], position);
@@ -4637,7 +4701,7 @@ function parseBubbles(text) {
         }
         if (!bubbleText) continue;
         if (!map.has(panel)) map.set(panel, []);
-        map.get(panel).push({ type, position, text: bubbleText });
+        map.get(panel).push({ type, position, speaker, text: bubbleText });
         autoIndex++;
     }
     return map;
