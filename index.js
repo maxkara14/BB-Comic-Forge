@@ -2974,7 +2974,7 @@ function getDraftEndpointPlaceholder(mode) {
 function getProviderNote(apiType) {
     if (apiType === 'onlysq-imagen') return 'OnlySQ ImaGen: быстрый режим через Flux и другие поддерживаемые модели. Обычно достаточно ключа и модели.';
     if (apiType === 'gemini') return 'Gemini хорошо подходит для референсов и образов. Gemini-compatible endpoint можно указывать базой, например /compatible.';
-    if (apiType === 'openai-images') return 'OpenAI Images: генерация по тексту без референсов. OpenAI-compatible endpoint можно указывать как /v1 или просто базовый URL.';
+    if (apiType === 'openai-images') return 'OpenAI Images: без референсов используется /images/generations. С включёнными референсами Comic Forge пробует /images/edits; если источник его не поддерживает, запрос повторяется без файлов — только с текстовыми описаниями референсов. Endpoint можно указывать как /v1 или просто базовый URL.';
     if (apiType === 'openai-chat') return 'OpenAI chat: режим для прокси, которые умеют возвращать изображения и читать референсы. OpenAI-compatible endpoint можно указывать базовым URL.';
     if (apiType === 'naistera') return 'Naistera использует отдельные поля model и preset ниже.';
     return '';
@@ -4875,10 +4875,10 @@ async function generatePanelImage(panel, onStatus = null, signal = null) {
     const settings = getSettings();
     throwIfAborted(signal);
     if (typeof onStatus === 'function') onStatus('Запрос');
-    const references = ['openai-images', 'onlysq-imagen'].includes(settings.apiType) ? [] : await collectReferenceImages(panel.previousImagePaths, signal);
+    const references = settings.apiType === 'onlysq-imagen' ? [] : await collectReferenceImages(panel.previousImagePaths, signal);
     throwIfAborted(signal);
     if (settings.apiType === 'onlysq-imagen') return generateOnlySqImage(panel, signal);
-    if (settings.apiType === 'openai-images') return generateOpenAiImage(panel, signal);
+    if (settings.apiType === 'openai-images') return generateOpenAiImage(panel, references, signal);
     if (settings.apiType === 'openai-chat') return generateOpenAiChatImage(panel, references, signal);
     if (settings.apiType === 'gemini') return generateGeminiImage(panel, references, signal);
     if (settings.apiType === 'naistera') return generateNaisteraImage(panel, references, signal);
@@ -4895,8 +4895,7 @@ function validateGenerationSettings() {
 async function collectReferenceImages(previousImagePaths = [], signal = null) {
     const settings = getSettings();
     const refs = settings.references
-        .filter(ref => ref.enabled && ref.path)
-        .slice(0, 5);
+        .filter(ref => ref.enabled && ref.path);
     const loaded = [];
     for (const ref of refs) {
         throwIfAborted(signal);
@@ -4920,8 +4919,7 @@ async function collectReferenceImages(previousImagePaths = [], signal = null) {
         loaded.push(...await collectWardrobeReferenceImages(signal));
     }
     const previous = await collectPreviousContextReferenceImages(previousImagePaths, signal);
-    const baseLimit = Math.max(0, 5 - previous.length);
-    return [...loaded.slice(0, baseLimit), ...previous].slice(0, 5);
+    return [...loaded, ...previous];
 }
 
 async function collectWardrobeReferenceImages(signal = null) {
@@ -5039,9 +5037,22 @@ async function generateOnlySqImage(panel, signal = null) {
     return /^https?:\/\//i.test(found) ? fetchUrlAsDataUrl(found, signal) : found;
 }
 
-async function generateOpenAiImage(panel, signal = null) {
+async function generateOpenAiImage(panel, references = [], signal = null) {
     const settings = getSettings();
-    const url = `${normalizeOpenAiBase(settings.endpoint)}/images/generations`;
+    const baseUrl = normalizeOpenAiBase(settings.endpoint);
+    if (references.length) {
+        try {
+            return await generateOpenAiImageEdit(panel, references, signal);
+        } catch (error) {
+            if (!isOpenAiImageEditUnsupported(error)) throw error;
+            console.warn('[BB Comic Forge] OpenAI Images edit endpoint is unavailable; retrying with text-only references.', {
+                editEndpoint: `${baseUrl}/images/edits`,
+                fallbackEndpoint: `${baseUrl}/images/generations`,
+                referenceCount: references.length,
+            });
+        }
+    }
+    const url = `${baseUrl}/images/generations`;
     const body = {
         model: settings.model,
         prompt: `${buildFullPrompt(panel)}\n\nAspect ratio target: ${panel.aspectRatio}.`,
@@ -5050,12 +5061,77 @@ async function generateOpenAiImage(panel, signal = null) {
         response_format: 'b64_json',
         n: 1,
     };
+    logOpenAiImageRoute(url, 'generation', 0);
     const result = await fetchJson(url, {
         method: 'POST',
         headers: imageApiHeaders(settings),
         body: JSON.stringify(body),
         signal,
     });
+    return extractOpenAiImageResult(result, signal);
+}
+
+async function generateOpenAiImageEdit(panel, references, signal = null) {
+    const settings = getSettings();
+    const url = `${normalizeOpenAiBase(settings.endpoint)}/images/edits`;
+    const formData = new FormData();
+    const prompt = [
+        buildReferenceInstruction(references),
+        buildFullPrompt(panel),
+        `Aspect ratio target: ${panel.aspectRatio}.`,
+    ].filter(Boolean).join('\n\n');
+    formData.append('model', settings.model);
+    formData.append('prompt', prompt);
+    formData.append('size', settings.openaiSize || '1024x1024');
+    formData.append('quality', settings.openaiQuality || 'standard');
+    formData.append('n', '1');
+    const imageField = references.length > 1 ? 'image[]' : 'image';
+    for (let index = 0; index < references.length; index++) {
+        throwIfAborted(signal);
+        const file = await referenceToImageFile(references[index], index);
+        formData.append(imageField, file, file.name);
+    }
+    logOpenAiImageRoute(url, 'edit', references.length);
+    const result = await fetchJson(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${settings.apiKey || ''}` },
+        body: formData,
+        signal,
+    });
+    return extractOpenAiImageResult(result, signal);
+}
+
+function logOpenAiImageRoute(endpoint, mode, referenceCount) {
+    console.info('[BB Comic Forge] OpenAI Images request', { endpoint, mode, referenceCount });
+}
+
+function isOpenAiImageEditUnsupported(error) {
+    const status = Number(error?.apiStatus);
+    if ([404, 405, 501].includes(status)) return true;
+    if (status !== 400) return false;
+    const details = `${error?.apiBody || ''} ${error?.message || ''}`.toLowerCase();
+    const unsupportedEditPatterns = [
+        /(?:unsupported|not supported|unknown|not found|unavailable|no route|cannot post).*?(?:images\/edits|image edit(?:ing)?|image input|endpoint|route)/i,
+        /(?:images\/edits|image edit(?:ing)?|image input|endpoint|route).*?(?:unsupported|not supported|unknown|not found|unavailable|no route)/i,
+        /model.*?(?:does not|doesn't|is not).*?support(?:ed)?.*?(?:edit|image input)/i,
+    ];
+    return unsupportedEditPatterns.some(pattern => pattern.test(details));
+}
+
+async function referenceToImageFile(reference, index) {
+    let dataUrl = reference.dataUrl;
+    let parsed = parseImageDataUrl(dataUrl);
+    if (!['png', 'jpeg', 'webp'].includes(parsed.normalizedFormat)) {
+        dataUrl = await convertDataUrlToPng(dataUrl);
+        parsed = parseImageDataUrl(dataUrl);
+    }
+    const binary = atob(parsed.base64Data.replace(/\s+/g, ''));
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    const extension = parsed.normalizedFormat === 'jpeg' ? 'jpg' : parsed.normalizedFormat;
+    return new File([bytes], `bbcf_reference_${index + 1}.${extension}`, { type: `image/${parsed.normalizedFormat}` });
+}
+
+function extractOpenAiImageResult(result, signal = null) {
     const image = result?.data?.[0];
     if (image?.b64_json) return `data:image/png;base64,${image.b64_json}`;
     if (image?.url) return fetchUrlAsDataUrl(image.url, signal);
@@ -5126,8 +5202,8 @@ async function generateNaisteraImage(panel, references = [], signal = null) {
             model: settings.naisteraModel || 'nano banana',
             aspect_ratio: aspectRatio,
             preset: settings.naisteraPreset || undefined,
-            reference_images: references.map(ref => ref.dataUrl).slice(0, 5),
-            reference_labels: references.map(ref => ref.name || ref.label || 'reference').slice(0, 5),
+            reference_images: references.map(ref => ref.dataUrl),
+            reference_labels: references.map(ref => ref.name || ref.label || 'reference'),
         }),
     });
     if (result?.data_url) return result.data_url;
@@ -5171,7 +5247,7 @@ function draftGeminiApiHeaders(endpoint, apiKey) {
 
 function normalizeOpenAiBase(rawEndpoint) {
     let base = String(rawEndpoint || '').trim().replace(/\/+$/, '');
-    base = base.replace(/\/(chat\/completions|images\/generations|models)$/i, '');
+    base = base.replace(/\/(chat\/completions|images\/(?:generations|edits)|models)$/i, '');
     if (/api\.onlysq\.ru\/ai\/openai(?:\/v\d+(?:\.\d+)?)?$/i.test(base)) {
         return base.replace(/\/v\d+(?:\.\d+)?$/i, '');
     }
@@ -5228,7 +5304,10 @@ async function fetchJson(url, options = {}) {
         const response = await fetch(url, { ...fetchOptions, signal });
         const text = await response.text();
         if (!response.ok) {
-            throw new Error(formatApiError(response.status, text, url));
+            const error = new Error(formatApiError(response.status, text, url));
+            error.apiStatus = response.status;
+            error.apiBody = text;
+            throw error;
         }
         try {
             return JSON.parse(text);
