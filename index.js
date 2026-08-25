@@ -12,12 +12,10 @@ import { POPUP_TYPE, Popup } from '../../../popup.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
 import {
     COMIC_PAGE_SELECTOR,
-    DRAFT_CONNECTION_MODES,
     DRAFT_SYNC_FIELDS,
     DRAFT_SYNC_SELECTORS,
     FAB_ID,
     FAB_WRAPPER_ID,
-    IMAGE_API_TYPES,
     MAX_COMIC_HISTORY,
     MAX_CONCURRENCY,
     MAX_PANELS,
@@ -25,17 +23,13 @@ import {
     MODAL_ID,
     MODULE_NAME,
     ONLYSQ_IMAGEN_ENDPOINT,
-    OPENAI_IMAGE_QUALITIES,
-    OPENAI_IMAGE_SIZES,
     SETTINGS_ID,
     UPLOAD_ALLOWED_FORMATS,
-    VALID_ASPECT_RATIOS,
     VALID_IMAGE_SIZES,
 } from './src/core/constants.js';
 import { makeId } from './src/core/id.js';
 import { clampInt } from './src/core/numbers.js';
 import { uniqueStrings } from './src/core/strings.js';
-import { migrateDraftPrompt, normalizeDraftPromptPresets } from './src/draft/prompts.js';
 import { ASPECT_PATTERNS, BUBBLE_POSITIONS, DEFAULT_PANEL_BEATS, STYLE_PRESETS } from './src/presets/builtins.js';
 import {
     getBuiltinLayoutId,
@@ -49,20 +43,14 @@ import {
     filterModelNamesForProvider,
     getKnownModelsForProvider,
 } from './src/providers/models.js';
-import {
-    getImageApiLabel,
-    normalizeDraftConnectionProfiles,
-    normalizeImageConnectionProfiles,
-} from './src/providers/profiles.js';
+import { getImageApiLabel } from './src/providers/profiles.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_NEGATIVE_PROMPT, DEFAULT_SETTINGS } from './src/settings/defaults.js';
+import { normalizeBaseSettings } from './src/settings/normalize.js';
 import {
-    findProfileSeed,
-    hasOwn,
     normalizeAspectPattern,
     normalizeSavedDraft,
-    normalizeSavedLayouts,
-    normalizeSavedStyles,
 } from './src/settings/normalizers.js';
+import { hydrateScopedSettings, persistCharacterLockProfileValue, persistWardrobeProfile } from './src/settings/profiles.js';
 import { buildScopedProfileFallbackKeys, buildScopedProfileKey } from './src/settings/scope.js';
 import { isDisclosureExpanded, setDisclosureExpanded, upgradeDisclosures } from './src/ui/disclosure.js';
 import {
@@ -73,13 +61,9 @@ import {
     WARDROBE_SLOTS,
     WARDROBE_TARGETS,
 } from './src/wardrobe/config.js';
-import { migrateLegacyWardrobe } from './src/wardrobe/migrations.js';
 import {
-    hasAnyWardrobeAssignment,
-    hasReferenceProfileData,
     normalizeReferences,
     normalizeWardrobeAssignment,
-    normalizeWardrobeAssignments,
     normalizeWardrobeItems,
 } from './src/wardrobe/normalizers.js';
 
@@ -261,223 +245,18 @@ function getSettings() {
         extension_settings[MODULE_NAME] = structuredClone(DEFAULT_SETTINGS);
     }
     const settings = extension_settings[MODULE_NAME];
-    let dirty = false;
-    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-        if (settings[key] === undefined) {
-            settings[key] = structuredClone(value);
-            dirty = true;
-        }
-    }
-    if (Number(settings.schemaVersion || 0) < DEFAULT_SETTINGS.schemaVersion) {
-        settings.schemaVersion = DEFAULT_SETTINGS.schemaVersion;
-        dirty = true;
-    }
-    settings.enabled = Boolean(settings.enabled);
-    settings.showFab = Boolean(settings.showFab);
-    settings.autoMode = Boolean(settings.autoMode);
-    settings.wardrobeEnabled = settings.wardrobeEnabled !== false;
-    settings.wardrobeSendDescription = settings.wardrobeSendDescription !== false;
-    settings.wardrobeSendImages = settings.wardrobeSendImages !== false;
-    if (!IMAGE_API_TYPES.includes(settings.apiType)) settings.apiType = DEFAULT_SETTINGS.apiType;
-    if (settings.apiType === 'openai-images' && String(settings.endpoint || '').includes('api.onlysq.ru')) {
-        settings.apiType = 'onlysq-imagen';
-        dirty = true;
-    }
-    if (!Array.isArray(settings.availableModels)) {
-        settings.availableModels = [];
-        dirty = true;
-    }
-    settings.availableModels = filterModelNamesForProvider(settings.availableModels, settings.apiType);
-    if (settings.apiType === 'onlysq-imagen' && !settings.model) {
-        settings.model = 'flux';
-        dirty = true;
-    }
-    settings.imageConnectionProfiles = normalizeImageConnectionProfiles(settings.imageConnectionProfiles);
-    if (!settings.imageConnectionProfiles.some(profile => profile.id === settings.activeImageConnectionProfileId)) {
-        settings.activeImageConnectionProfileId = '';
-    }
-    settings.savedStyles = normalizeSavedStyles(settings.savedStyles);
-    settings.savedLayouts = normalizeSavedLayouts(settings.savedLayouts);
-    if (!getStylePresetById(settings.stylePreset, settings)) settings.stylePreset = DEFAULT_SETTINGS.stylePreset;
-    if (!getLayoutPresetById(settings.layout, settings)) settings.layout = DEFAULT_SETTINGS.layout;
-    if (!['panels', 'single'].includes(settings.generationMode)) settings.generationMode = DEFAULT_SETTINGS.generationMode;
-    if (settings.bubbleMode !== 'model') {
-        settings.bubbleMode = 'model';
-        dirty = true;
-    }
-    if (!['new', 'append_last'].includes(settings.insertMode)) settings.insertMode = DEFAULT_SETTINGS.insertMode;
-    if (settings.customPrompt === undefined && settings.customStyle !== undefined) {
-        settings.customPrompt = settings.customStyle;
-        dirty = true;
-    }
-    settings.customPrompt = String(settings.customPrompt || '');
-    const migratedDraftPrompt = migrateDraftPrompt(settings.draftPrompt);
-    if (migratedDraftPrompt !== settings.draftPrompt) {
-        settings.draftPrompt = migratedDraftPrompt;
-        dirty = true;
-    }
-    settings.panelCount = clampInt(settings.panelCount, 1, MAX_PANELS, DEFAULT_SETTINGS.panelCount);
-    settings.concurrency = clampInt(settings.concurrency, 1, MAX_CONCURRENCY, DEFAULT_SETTINGS.concurrency);
-    settings.requestCooldownMs = clampInt(settings.requestCooldownMs, 0, 600000, DEFAULT_SETTINGS.requestCooldownMs);
-    settings.contextMessages = clampInt(settings.contextMessages, 0, 20, DEFAULT_SETTINGS.contextMessages);
-    settings.injectChatContextToImagePrompt = settings.injectChatContextToImagePrompt === true;
-    settings.previousImageCount = clampInt(settings.previousImageCount, 0, MAX_PREVIOUS_CONTEXT_IMAGES, DEFAULT_SETTINGS.previousImageCount);
-    settings.timeoutMs = clampInt(settings.timeoutMs, 30000, 600000, DEFAULT_SETTINGS.timeoutMs);
-    if (!DRAFT_CONNECTION_MODES.includes(settings.draftConnectionMode)) settings.draftConnectionMode = DEFAULT_SETTINGS.draftConnectionMode;
-    settings.draftEndpoint = String(settings.draftEndpoint || '');
-    settings.draftApiKey = String(settings.draftApiKey || '');
-    settings.draftModel = String(settings.draftModel || '');
-    if (!Array.isArray(settings.availableDraftModels)) settings.availableDraftModels = [];
-    settings.availableDraftModels = filterDraftModelNames(settings.availableDraftModels, settings.draftConnectionMode);
-    settings.draftTemperature = Math.max(0, Math.min(2, Number(settings.draftTemperature ?? DEFAULT_SETTINGS.draftTemperature) || 0));
-    settings.draftTavernProfileId = String(settings.draftTavernProfileId || '');
-    settings.draftConnectionProfiles = normalizeDraftConnectionProfiles(settings.draftConnectionProfiles, getDraftTavernProfileLabel);
-    if (!settings.draftConnectionProfiles.some(profile => profile.id === settings.activeDraftConnectionProfileId)) {
-        settings.activeDraftConnectionProfileId = '';
-    }
-    settings.draftPromptPresets = normalizeDraftPromptPresets(settings.draftPromptPresets);
-    if (!settings.draftPromptPresets.some(preset => preset.id === settings.activeDraftPromptPresetId)) {
-        settings.activeDraftPromptPresetId = '';
-    }
-    if (!OPENAI_IMAGE_SIZES.includes(settings.openaiSize)) settings.openaiSize = DEFAULT_SETTINGS.openaiSize;
-    if (!OPENAI_IMAGE_QUALITIES.includes(settings.openaiQuality)) settings.openaiQuality = DEFAULT_SETTINGS.openaiQuality;
-    if (!VALID_IMAGE_SIZES.includes(settings.imageSize)) settings.imageSize = DEFAULT_SETTINGS.imageSize;
-    if (!VALID_ASPECT_RATIOS.includes(settings.aspectRatio) && settings.aspectRatio !== 'auto') settings.aspectRatio = DEFAULT_SETTINGS.aspectRatio;
-    if (!VALID_ASPECT_RATIOS.includes(settings.naisteraAspectRatio) && settings.naisteraAspectRatio !== 'auto') settings.naisteraAspectRatio = DEFAULT_SETTINGS.naisteraAspectRatio;
-    settings.negativePrompt = String(settings.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT);
-    settings.defaultPanelNotes = String(settings.defaultPanelNotes || '');
-    settings.defaultBubbles = String(settings.defaultBubbles || '');
-    settings.defaultInserts = String(settings.defaultInserts || '');
-    settings.defaultSfx = String(settings.defaultSfx || '');
-    if (!Array.isArray(settings.wardrobeItems)) settings.wardrobeItems = [];
-    if (!settings.wardrobeAssignments || typeof settings.wardrobeAssignments !== 'object') settings.wardrobeAssignments = {};
-    if (Array.isArray(settings.wardrobe) && settings.wardrobe.some(item => item?.path || item?.description || item?.name)) {
-        migrateLegacyWardrobe(settings);
-        dirty = true;
-    }
-    settings.wardrobeItems = normalizeWardrobeItems(settings.wardrobeItems);
-    settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
-    settings.wardrobe = [];
-    if (!settings.characterLockProfiles || typeof settings.characterLockProfiles !== 'object' || Array.isArray(settings.characterLockProfiles)) {
-        settings.characterLockProfiles = {};
-        dirty = true;
-    }
-    const characterLockProfileKey = getCharacterLockProfileKey();
-    if (settings.activeCharacterLockProfileKey !== characterLockProfileKey) {
-        settings.activeCharacterLockProfileKey = characterLockProfileKey;
-        dirty = true;
-    }
-    settings.characterLock = String(settings.characterLockProfiles[characterLockProfileKey] || '');
-    if (!settings.wardrobeProfiles || typeof settings.wardrobeProfiles !== 'object' || Array.isArray(settings.wardrobeProfiles)) {
-        settings.wardrobeProfiles = {};
-        dirty = true;
-    }
-    const wardrobeProfileKey = getWardrobeProfileKey();
-    const unscopedWardrobeProfileKey = 'legacy:unscoped';
-    const legacyWardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
-    const hasLegacyWardrobeAssignments = hasAnyWardrobeAssignment(legacyWardrobeAssignments);
-    if (!settings.wardrobeMigratedToProfiles && hasLegacyWardrobeAssignments && !settings.wardrobeProfiles[unscopedWardrobeProfileKey]) {
-        settings.wardrobeProfiles[unscopedWardrobeProfileKey] = structuredClone(legacyWardrobeAssignments);
-        dirty = true;
-    }
-    if (!settings.wardrobeMigratedToProfiles) {
-        settings.wardrobeMigratedToProfiles = true;
-        dirty = true;
-    }
-    if (settings.activeWardrobeProfileKey !== wardrobeProfileKey) {
-        settings.activeWardrobeProfileKey = wardrobeProfileKey;
-        dirty = true;
-    }
-    const hasActiveWardrobeProfile = hasOwn(settings.wardrobeProfiles, wardrobeProfileKey);
-    let wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeProfiles[wardrobeProfileKey] || {});
-    if (!hasActiveWardrobeProfile && !hasAnyWardrobeAssignment(wardrobeAssignments)) {
-        const seed = findProfileSeed(settings.wardrobeProfiles, getScopedProfileFallbackKeys(), hasAnyWardrobeAssignment);
-        if (seed) {
-            wardrobeAssignments = normalizeWardrobeAssignments(seed.value);
-            settings.wardrobeProfiles[wardrobeProfileKey] = structuredClone(wardrobeAssignments);
-            dirty = true;
-            console.info('[BB Comic Forge] restored wardrobe assignment profile from', seed.key);
-        }
-    }
-    settings.wardrobeAssignments = wardrobeAssignments;
-    if (settings.savedDraft && typeof settings.savedDraft !== 'object') {
-        settings.savedDraft = null;
-        dirty = true;
-    }
-    if (!settings.savedDraftProfiles || typeof settings.savedDraftProfiles !== 'object' || Array.isArray(settings.savedDraftProfiles)) {
-        settings.savedDraftProfiles = {};
-        dirty = true;
-    }
-    const savedDraftProfileKey = getSavedDraftProfileKey();
-    if (settings.activeSavedDraftProfileKey !== savedDraftProfileKey) {
-        settings.activeSavedDraftProfileKey = savedDraftProfileKey;
-        dirty = true;
-    }
-    settings.savedDraft = normalizeSavedDraft(settings.savedDraftProfiles[savedDraftProfileKey]);
-    if (!Array.isArray(settings.comicHistory)) {
-        settings.comicHistory = [];
-        dirty = true;
-    } else if (settings.comicHistory.length > MAX_COMIC_HISTORY) {
-        settings.comicHistory = settings.comicHistory.slice(0, MAX_COMIC_HISTORY);
-        dirty = true;
-    }
-    if (!settings.referenceProfiles || typeof settings.referenceProfiles !== 'object' || Array.isArray(settings.referenceProfiles)) {
-        settings.referenceProfiles = {};
-        dirty = true;
-    }
-    const referenceProfileKey = getReferenceProfileKey();
-    const unscopedReferenceProfileKey = 'legacy:unscoped';
-    const existingReferences = normalizeReferences(settings.references);
-    const hasLegacyReferences = existingReferences.some(ref => ref.path || ref.name || ref.description);
-    if (!settings.referencesMigratedToProfiles && hasLegacyReferences && !settings.referenceProfiles[unscopedReferenceProfileKey]) {
-        settings.referenceProfiles[unscopedReferenceProfileKey] = structuredClone(existingReferences);
-        dirty = true;
-    }
-    if (!settings.referencesMigratedToProfiles) {
-        settings.referencesMigratedToProfiles = true;
-        dirty = true;
-    }
-    if (settings.activeReferenceProfileKey !== referenceProfileKey) {
-        settings.activeReferenceProfileKey = referenceProfileKey;
-        dirty = true;
-    }
-    const hasActiveReferenceProfile = hasOwn(settings.referenceProfiles, referenceProfileKey);
-    let references = normalizeReferences(settings.referenceProfiles[referenceProfileKey] || []);
-    if (!hasActiveReferenceProfile && !hasReferenceProfileData(references)) {
-        const seed = findProfileSeed(settings.referenceProfiles, getScopedProfileFallbackKeys(), hasReferenceProfileData);
-        if (seed) {
-            references = normalizeReferences(seed.value);
-            settings.referenceProfiles[referenceProfileKey] = structuredClone(references);
-            dirty = true;
-            console.info('[BB Comic Forge] restored reference profile from', seed.key);
-        }
-    }
-    settings.references = references;
+    let dirty = normalizeBaseSettings(settings, getDraftTavernProfileLabel);
+    dirty = hydrateScopedSettings(settings, getScopedProfileKey(), getScopedProfileFallbackKeys) || dirty;
     if (dirty) saveSettings();
     return settings;
 }
 
 function persistWardrobeAssignments(settings) {
-    if (!settings) return;
-    const profileKey = getWardrobeProfileKey();
-    if (!settings.wardrobeProfiles || typeof settings.wardrobeProfiles !== 'object' || Array.isArray(settings.wardrobeProfiles)) {
-        settings.wardrobeProfiles = {};
-    }
-    settings.wardrobeAssignments = normalizeWardrobeAssignments(settings.wardrobeAssignments);
-    settings.wardrobeProfiles[profileKey] = structuredClone(settings.wardrobeAssignments);
-    settings.activeWardrobeProfileKey = profileKey;
+    persistWardrobeProfile(settings, getWardrobeProfileKey());
 }
 
 function persistCharacterLockProfile(settings) {
-    if (!settings) return;
-    const profileKey = getCharacterLockProfileKey();
-    if (!settings.characterLockProfiles || typeof settings.characterLockProfiles !== 'object' || Array.isArray(settings.characterLockProfiles)) {
-        settings.characterLockProfiles = {};
-    }
-    const value = String(settings.characterLock || '');
-    if (value) settings.characterLockProfiles[profileKey] = value;
-    else delete settings.characterLockProfiles[profileKey];
-    settings.activeCharacterLockProfileKey = profileKey;
+    persistCharacterLockProfileValue(settings, getCharacterLockProfileKey());
 }
 
 function saveSettings() {
