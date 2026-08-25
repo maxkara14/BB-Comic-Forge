@@ -58,15 +58,6 @@
     font-size: 0.95rem;
 }
 
-#bbcf-settings details.bbcf-section > summary {
-    cursor: pointer;
-    list-style: none;
-}
-
-#bbcf-settings details.bbcf-section > summary::-webkit-details-marker {
-    display: none;
-}
-
 #bbcf-settings .bbcf-row {
     display: grid;
     grid-template-columns: 1fr;
@@ -896,34 +887,6 @@
     overflow: hidden;
 }
 
-.bbcf-final-prompt > summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    color: var(--bbcf-text);
-    font-weight: 700;
-    cursor: pointer;
-    user-select: none;
-}
-
-.bbcf-final-prompt > summary::-webkit-details-marker {
-    display: none;
-}
-
-.bbcf-final-prompt > summary::after {
-    content: '\f078';
-    margin-left: auto;
-    font-family: 'Font Awesome 6 Free';
-    font-weight: 900;
-    color: var(--bbcf-muted);
-    transition: transform 0.18s ease;
-}
-
-.bbcf-final-prompt[open] > summary::after {
-    transform: rotate(180deg);
-}
-
 .bbcf-final-prompt-body {
     display: grid;
     gap: 8px;
@@ -1105,21 +1068,6 @@
     background: rgba(255, 255, 255, 0.035);
 }
 
-.bbcf-advanced summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    color: #dce6f3;
-    cursor: pointer;
-    font-weight: 700;
-    list-style: none;
-}
-
-.bbcf-advanced summary::-webkit-details-marker {
-    display: none;
-}
-
 .bbcf-advanced-body {
     padding: 0 12px 12px;
 }
@@ -1138,20 +1086,6 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.035);
-}
-
-.bbcf-preset-help summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #dce6f3;
-    cursor: pointer;
-    font-weight: 700;
-    list-style: none;
-}
-
-.bbcf-preset-help summary::-webkit-details-marker {
-    display: none;
 }
 
 .bbcf-preset-examples {
@@ -2406,57 +2340,10 @@ body.bbcf-lightbox-open {
     padding-top: 9px;
 }
 
-#bbcf-settings .bbcf-dashboard-preferences > summary {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--bbcf-muted);
-    font-size: 0.78rem;
-    cursor: pointer;
-    list-style: none;
-}
-
-#bbcf-settings .bbcf-dashboard-preferences > summary::-webkit-details-marker {
-    display: none;
-}
-
 #bbcf-settings .bbcf-dashboard-preferences-body {
     display: grid;
     gap: 8px;
     padding-top: 10px;
-}
-
-#bbcf-settings details.bbcf-section > summary {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    align-items: center;
-}
-
-#bbcf-settings details.bbcf-section > summary small {
-    max-width: 150px;
-    color: var(--bbcf-muted);
-    font-size: 0.7rem;
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-#bbcf-settings details.bbcf-section > summary::after {
-    content: '\f078';
-    font-family: 'Font Awesome 6 Free';
-    font-size: 0.7rem;
-    font-weight: 900;
-    color: var(--bbcf-muted);
-    transition: transform 0.16s ease;
-}
-
-#bbcf-settings details.bbcf-section[open] > summary {
-    margin-bottom: 10px;
-}
-
-#bbcf-settings details.bbcf-section[open] > summary::after {
-    transform: rotate(180deg);
 }
 
 /* Forge workflow */
@@ -2498,75 +2385,140 @@ body.bbcf-lightbox-open {
     overflow: hidden;
 }
 
-details.bbcf-workflow-card > summary {
+/* Shared disclosure component */
+.bbcf-disclosure {
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+.bbcf-disclosure-toggle {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.bbcf-disclosure-toggle:hover {
+    background: rgba(98, 214, 210, 0.075);
+}
+
+.bbcf-disclosure-toggle:focus-visible {
+    outline: 2px solid rgba(98, 214, 210, 0.62);
+    outline-offset: -2px;
+}
+
+.bbcf-disclosure-toggle::after {
+    content: '\f078';
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: #8996a8;
+    font-family: 'Font Awesome 6 Free';
+    font-size: 0.7rem;
+    font-weight: 900;
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bbcf-disclosure[data-bbcf-expanded="true"] > .bbcf-disclosure-toggle::after {
+    transform: rotate(180deg);
+}
+
+.bbcf-disclosure-panel {
+    display: grid;
+    grid-template-rows: 0fr;
+    min-width: 0;
+    opacity: 0.55;
+    transition:
+        grid-template-rows 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.16s ease;
+}
+
+.bbcf-disclosure[data-bbcf-expanded="true"] > .bbcf-disclosure-panel {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+.bbcf-disclosure-panel-inner {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+#bbcf-settings .bbcf-disclosure.bbcf-section {
+    gap: 0;
+}
+
+#bbcf-settings .bbcf-disclosure.bbcf-section > .bbcf-disclosure-toggle {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 4px;
+}
+
+#bbcf-settings .bbcf-disclosure.bbcf-section > .bbcf-disclosure-toggle small {
+    max-width: 150px;
+    color: var(--bbcf-muted);
+    font-size: 0.7rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#bbcf-settings .bbcf-disclosure.bbcf-section > .bbcf-disclosure-panel .bbcf-disclosure-panel-inner > :first-child {
+    margin-top: 10px;
+}
+
+#bbcf-settings .bbcf-dashboard-preferences > .bbcf-disclosure-toggle,
+.bbcf-advanced > .bbcf-disclosure-toggle,
+.bbcf-preset-help > .bbcf-disclosure-toggle,
+.bbcf-final-prompt > .bbcf-disclosure-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#bbcf-settings .bbcf-dashboard-preferences > .bbcf-disclosure-toggle {
+    padding: 4px;
+    color: var(--bbcf-muted);
+    font-size: 0.78rem;
+}
+
+.bbcf-advanced > .bbcf-disclosure-toggle,
+.bbcf-final-prompt > .bbcf-disclosure-toggle {
+    padding: 10px 12px;
+    color: #dce6f3;
+    font-weight: 700;
+}
+
+.bbcf-preset-help > .bbcf-disclosure-toggle {
+    padding: 2px;
+    color: #dce6f3;
+    font-weight: 700;
+}
+
+.bbcf-workflow-card > .bbcf-disclosure-toggle {
     min-height: 54px;
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
     color: #e6edf7;
-    cursor: pointer;
-    list-style: none;
 }
 
-details.bbcf-workflow-card > summary::-webkit-details-marker {
-    display: none;
-}
-
-details.bbcf-workflow-card > summary::after {
-    content: '\f078';
-    margin-left: auto;
-    font-family: 'Font Awesome 6 Free';
-    font-size: 0.72rem;
-    font-weight: 900;
-    color: #8996a8;
-    transition: transform 0.16s ease;
-}
-
-details.bbcf-workflow-card[open] > summary::after {
-    transform: rotate(180deg);
-}
-
-/* Shared disclosure animation */
-.bbcf-animated-details {
-    box-sizing: border-box;
-}
-
-.bbcf-animated-details[data-bbcf-animation] {
-    will-change: height;
-}
-
-.bbcf-animated-details > summary {
-    border-radius: 7px;
-    transition: background-color 0.18s ease, color 0.18s ease;
-    user-select: none;
-}
-
-.bbcf-animated-details > summary:hover {
-    background-color: rgba(98, 214, 210, 0.055);
-}
-
-#bbcf-settings .bbcf-dashboard-preferences > summary::after,
-.bbcf-advanced > summary::after,
-.bbcf-preset-help > summary::after {
-    content: '\f078';
-    margin-left: auto;
-    color: #8996a8;
-    font-family: 'Font Awesome 6 Free';
-    font-size: 0.7rem;
-    font-weight: 900;
-}
-
-.bbcf-animated-details > summary::after {
-    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.bbcf-animated-details[open] > summary::after {
-    transform: rotate(180deg);
-}
-
-.bbcf-animated-details[data-bbcf-animation="closing"] > summary::after {
-    transform: rotate(0deg);
+@media (prefers-reduced-motion: reduce) {
+    .bbcf-disclosure-panel,
+    .bbcf-disclosure-toggle,
+    .bbcf-disclosure-toggle::after {
+        transition-duration: 0.01ms !important;
+    }
 }
 
 .bbcf-workflow-number {
@@ -2607,12 +2559,26 @@ details.bbcf-workflow-card[open] > summary::after {
     min-height: 38px;
 }
 
+.bbcf-form {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    padding: 0;
+    overflow: hidden;
+}
+
+.bbcf-form-content {
+    min-width: 0;
+    min-height: 0;
+    padding: 14px;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 .bbcf-generate-toolbar {
-    position: sticky;
-    bottom: -14px;
+    position: relative;
     z-index: 8;
     justify-content: space-between;
-    margin: 12px -14px -14px;
+    margin: 0;
     padding: 12px 14px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     background: rgba(17, 21, 29, 0.96);
@@ -2646,6 +2612,7 @@ details.bbcf-workflow-card[open] > summary::after {
     }
 
     .bbcf-form {
+        overflow: hidden;
         border-right: 1px solid rgba(255, 255, 255, 0.1);
         border-bottom: 0;
     }
@@ -2697,7 +2664,13 @@ details.bbcf-workflow-card[open] > summary::after {
         display: none;
     }
 
-    .bbcf-modal-root[data-mobile-view="editor"] .bbcf-form,
+    .bbcf-modal-root[data-mobile-view="editor"] .bbcf-form {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        min-height: 100%;
+        border-bottom: 0;
+    }
+
     .bbcf-modal-root[data-mobile-view="preview"] .bbcf-preview {
         display: block;
         min-height: 100%;
@@ -2705,8 +2678,6 @@ details.bbcf-workflow-card[open] > summary::after {
     }
 
     .bbcf-generate-toolbar {
-        bottom: -10px;
-        margin: 12px -10px -10px;
         padding: 10px;
     }
 }
@@ -2720,7 +2691,7 @@ details.bbcf-workflow-card[open] > summary::after {
         display: none;
     }
 
-    #bbcf-settings details.bbcf-section > summary small {
+    #bbcf-settings .bbcf-disclosure.bbcf-section > .bbcf-disclosure-toggle small {
         display: none;
     }
 
@@ -2739,5 +2710,9 @@ details.bbcf-workflow-card[open] > summary::after {
 
     .bbcf-generate-toolbar .menu_button {
         width: 100%;
+    }
+
+    .bbcf-form-content {
+        padding: 10px;
     }
 }

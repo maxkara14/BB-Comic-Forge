@@ -1104,78 +1104,62 @@ function refreshSettingsDashboard(root = document.getElementById(SETTINGS_ID)) {
         : 'Заверши настройку';
 }
 
-const detailsAnimationState = new WeakMap();
+let disclosureIdCounter = 0;
 
-function prefersReducedMotion() {
-    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+function isDisclosureExpanded(disclosure) {
+    return disclosure?.dataset?.bbcfExpanded === 'true';
 }
 
-function getCollapsedDetailsHeight(details, summary) {
-    const styles = window.getComputedStyle(details);
-    const chrome = ['borderTopWidth', 'borderBottomWidth', 'paddingTop', 'paddingBottom']
-        .reduce((total, property) => total + (Number.parseFloat(styles[property]) || 0), 0);
-    return summary.getBoundingClientRect().height + chrome;
-}
-
-function setAnimatedDetailsState(details, expanded) {
-    const summary = details?.querySelector(':scope > summary');
-    if (!summary) return;
+function setDisclosureExpanded(disclosure, expanded, { emit = true } = {}) {
+    const button = disclosure?.querySelector(':scope > .bbcf-disclosure-toggle');
+    const panel = disclosure?.querySelector(':scope > .bbcf-disclosure-panel');
+    if (!button || !panel) return;
     const shouldExpand = Boolean(expanded);
-    const current = detailsAnimationState.get(details);
-    if (!current && details.open === shouldExpand) return;
-    if (prefersReducedMotion() || typeof details.animate !== 'function') {
-        current?.animation?.cancel();
-        detailsAnimationState.delete(details);
-        delete details.dataset.bbcfAnimation;
-        details.style.removeProperty('height');
-        details.style.removeProperty('overflow');
-        details.open = shouldExpand;
-        summary.setAttribute('aria-expanded', String(shouldExpand));
-        return;
+    const changed = isDisclosureExpanded(disclosure) !== shouldExpand;
+    disclosure.dataset.bbcfExpanded = String(shouldExpand);
+    button.setAttribute('aria-expanded', String(shouldExpand));
+    panel.setAttribute('aria-hidden', String(!shouldExpand));
+    if (shouldExpand) panel.removeAttribute('inert');
+    else panel.setAttribute('inert', '');
+    if (changed && emit) {
+        disclosure.dispatchEvent(new CustomEvent('bbcf:toggle', {
+            bubbles: true,
+            detail: { expanded: shouldExpand },
+        }));
     }
-
-    const startHeight = details.getBoundingClientRect().height;
-    current?.animation?.cancel();
-    if (shouldExpand) details.open = true;
-    const endHeight = shouldExpand
-        ? details.scrollHeight + Math.max(0, details.offsetHeight - details.clientHeight)
-        : getCollapsedDetailsHeight(details, summary);
-    const duration = Math.min(280, Math.max(180, Math.abs(endHeight - startHeight) * 0.35));
-    details.dataset.bbcfAnimation = shouldExpand ? 'opening' : 'closing';
-    details.style.overflow = 'hidden';
-    summary.setAttribute('aria-expanded', String(shouldExpand));
-    const animation = details.animate(
-        { height: [`${startHeight}px`, `${endHeight}px`] },
-        { duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
-    );
-    detailsAnimationState.set(details, { animation, expanded: shouldExpand });
-    animation.onfinish = () => {
-        if (detailsAnimationState.get(details)?.animation !== animation) return;
-        if (!shouldExpand) details.open = false;
-        details.style.removeProperty('height');
-        details.style.removeProperty('overflow');
-        delete details.dataset.bbcfAnimation;
-        detailsAnimationState.delete(details);
-        summary.setAttribute('aria-expanded', String(shouldExpand));
-    };
 }
 
-function bindAnimatedDetails(root) {
-    root?.querySelectorAll('details').forEach(details => {
+function upgradeDisclosures(root) {
+    const detailsNodes = Array.from(root?.querySelectorAll('details') || []);
+    for (const details of detailsNodes) {
         const summary = details.querySelector(':scope > summary');
-        if (!summary || details.classList.contains('bbcf-animated-details')) return;
-        details.classList.add('bbcf-animated-details');
-        summary.setAttribute('aria-expanded', String(details.open));
-        summary.addEventListener('click', event => {
-            if (prefersReducedMotion() || typeof details.animate !== 'function') return;
-            event.preventDefault();
-            const isClosing = details.dataset.bbcfAnimation === 'closing';
-            setAnimatedDetailsState(details, isClosing || !details.open);
+        if (!summary) continue;
+        const disclosure = document.createElement('section');
+        for (const attribute of Array.from(details.attributes)) {
+            if (attribute.name !== 'open') disclosure.setAttribute(attribute.name, attribute.value);
+        }
+        disclosure.classList.add('bbcf-disclosure');
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `${summary.className} bbcf-disclosure-toggle`.trim();
+        button.innerHTML = summary.innerHTML;
+
+        const panel = document.createElement('div');
+        panel.className = 'bbcf-disclosure-panel';
+        panel.id = `${details.id || `bbcf-disclosure-${++disclosureIdCounter}`}-panel`;
+        const panelInner = document.createElement('div');
+        panelInner.className = 'bbcf-disclosure-panel-inner';
+        Array.from(details.childNodes).forEach(node => {
+            if (node !== summary) panelInner.appendChild(node);
         });
-        details.addEventListener('toggle', () => {
-            if (!details.dataset.bbcfAnimation) summary.setAttribute('aria-expanded', String(details.open));
-        });
-    });
+        panel.appendChild(panelInner);
+        button.setAttribute('aria-controls', panel.id);
+        disclosure.append(button, panel);
+        details.replaceWith(disclosure);
+        setDisclosureExpanded(disclosure, details.open, { emit: false });
+        button.addEventListener('click', () => setDisclosureExpanded(disclosure, !isDisclosureExpanded(disclosure)));
+    }
 }
 
 function createSettingsUi() {
@@ -1576,7 +1560,7 @@ function createSettingsUi() {
         </div>
     `;
     container.appendChild(wrapper);
-    bindAnimatedDetails(wrapper);
+    upgradeDisclosures(wrapper);
     bindSettingsUi(wrapper);
     syncProviderRows();
     syncImageConnectionProfileUi(wrapper);
@@ -1590,15 +1574,15 @@ function bindSettingsUi(root) {
     root.querySelector('#bbcf-open-modal')?.addEventListener('click', openForgeModal);
     root.querySelectorAll('[data-bbcf-open-settings]').forEach(button => {
         const section = root.querySelector(`#${button.dataset.bbcfOpenSettings}`);
-        if (!(section instanceof HTMLDetailsElement)) return;
-        const syncExpandedState = () => button.setAttribute('aria-expanded', String(section.open));
+        if (!section?.classList.contains('bbcf-disclosure')) return;
+        const syncExpandedState = () => button.setAttribute('aria-expanded', String(isDisclosureExpanded(section)));
         button.setAttribute('aria-controls', section.id);
         syncExpandedState();
-        section.addEventListener('toggle', syncExpandedState);
+        section.addEventListener('bbcf:toggle', syncExpandedState);
         button.addEventListener('click', () => {
-            const shouldOpen = !section.open || section.dataset.bbcfAnimation === 'closing';
+            const shouldOpen = !isDisclosureExpanded(section);
             button.setAttribute('aria-expanded', String(shouldOpen));
-            setAnimatedDetailsState(section, shouldOpen);
+            setDisclosureExpanded(section, shouldOpen);
             if (shouldOpen) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
@@ -3822,6 +3806,7 @@ function openForgeModal(options = {}) {
             </div>
             <div class="bbcf-modal-body">
                 <form class="bbcf-form" id="bbcf-draft-form">
+                    <div class="bbcf-form-content">
                     <section class="bbcf-recipe-bar">
                         <div class="bbcf-recipe-icon"><i class="fa-solid fa-palette"></i></div>
                         <div class="bbcf-recipe-copy">
@@ -3831,7 +3816,7 @@ function openForgeModal(options = {}) {
                         </div>
                         <span class="bbcf-status-chip is-ready"><i class="fa-solid fa-check"></i><span>Готово</span></span>
                     </section>
-                    <details class="bbcf-workflow-card bbcf-workflow-page">
+                    <details class="bbcf-workflow-card bbcf-workflow-page" open>
                         <summary>
                             <span class="bbcf-workflow-number">1</span>
                             <span class="bbcf-workflow-heading"><strong>Страница</strong><small id="bbcf-forge-page-summary"></small></span>
@@ -3986,6 +3971,7 @@ function openForgeModal(options = {}) {
                         </div>
                     </details>
                     </div>
+                    </div>
                     <div class="bbcf-toolbar bbcf-generate-toolbar">
                         <span class="bbcf-generate-ready"><i class="fa-solid fa-circle-check"></i><span>Черновик сохраняется автоматически</span></span>
                         <button class="menu_button bbcf-primary" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Сгенерировать страницу</span></button>
@@ -4023,7 +4009,7 @@ function openForgeModal(options = {}) {
     `;
     document.body.appendChild(root);
     state.modal = root;
-    bindAnimatedDetails(root);
+    upgradeDisclosures(root);
     root.querySelectorAll('[data-bbcf-close]').forEach(node => node.addEventListener('click', closeForgeModal));
     root.querySelector('#bbcf-modal-minimize')?.addEventListener('click', minimizeForgeModal);
     root.querySelectorAll('[data-bbcf-mobile-view]').forEach(button => button.addEventListener('click', () => setForgeMobileView(root, button.dataset.bbcfMobileView)));
@@ -6425,15 +6411,15 @@ function bindComicUtilityActions(root) {
 }
 
 function bindFinalPromptPreview(root) {
-    const details = root.querySelector('#bbcf-final-prompt-details');
+    const disclosure = root.querySelector('#bbcf-final-prompt-details');
     updateFinalPromptCopyAllVisibility(root);
-    details?.addEventListener('toggle', () => {
-        if (details.open) renderFinalPromptPreview(root);
+    disclosure?.addEventListener('bbcf:toggle', () => {
+        if (isDisclosureExpanded(disclosure)) renderFinalPromptPreview(root);
     });
 
     root.querySelector('#bbcf-draft-mode')?.addEventListener('change', () => {
         updateFinalPromptCopyAllVisibility(root);
-        if (details?.open) renderFinalPromptPreview(root);
+        if (isDisclosureExpanded(disclosure)) renderFinalPromptPreview(root);
     });
 
     root.querySelector('#bbcf-refresh-final-prompt')?.addEventListener('click', () => {
