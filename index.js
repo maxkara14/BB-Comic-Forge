@@ -44,6 +44,18 @@ import {
     getKnownModelsForProvider,
 } from './src/providers/models.js';
 import { getImageApiLabel } from './src/providers/profiles.js';
+import {
+    buildDraftConnectionProfileOptionsHtml,
+    buildDraftModelOptionsHtml,
+    buildImageConnectionProfileOptionsHtml,
+    buildModelOptionsHtml,
+    getActiveDraftConnectionProfile,
+    getActiveImageConnectionProfile,
+    getDraftEndpointPlaceholder,
+    getDraftModelPlaceholder,
+    getEndpointPlaceholder,
+    getProviderNote,
+} from './src/providers/view.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_NEGATIVE_PROMPT, DEFAULT_SETTINGS } from './src/settings/defaults.js';
 import { normalizeBaseSettings } from './src/settings/normalize.js';
 import {
@@ -54,6 +66,7 @@ import { hydrateScopedSettings, persistCharacterLockProfileValue, persistWardrob
 import { buildScopedProfileFallbackKeys, buildScopedProfileKey } from './src/settings/scope.js';
 import { isDisclosureExpanded, setDisclosureExpanded, upgradeDisclosures } from './src/ui/disclosure.js';
 import { decodeJsonAttr, encodeJsonAttr, escapeHtml, option, stripHtml } from './src/ui/html.js';
+import { updateSettingsDashboard } from './src/ui/settings-dashboard.js';
 import {
     REFERENCE_SLOTS,
     WARDROBE_CATEGORIES,
@@ -309,60 +322,11 @@ function getSettingsDashboardState(settings = getSettings()) {
     };
 }
 
-function setDashboardCardState(root, key, { ready = true, title = '', meta = '' } = {}) {
-    const card = root?.querySelector(`[data-bbcf-dashboard-card="${key}"]`);
-    if (!card) return;
-    card.classList.toggle('is-ready', ready);
-    card.classList.toggle('needs-attention', !ready);
-    const titleNode = card.querySelector('[data-bbcf-dashboard-title]');
-    const metaNode = card.querySelector('[data-bbcf-dashboard-meta]');
-    const statusNode = card.querySelector('[data-bbcf-dashboard-status]');
-    if (titleNode) titleNode.textContent = title;
-    if (metaNode) metaNode.textContent = meta;
-    if (statusNode) {
-        statusNode.className = `bbcf-status-chip ${ready ? 'is-ready' : 'needs-attention'}`;
-        statusNode.innerHTML = ready
-            ? '<i class="fa-solid fa-check"></i><span>Готово</span>'
-            : '<i class="fa-solid fa-circle-exclamation"></i><span>Настроить</span>';
-    }
-}
-
 function refreshSettingsDashboard(root = document.getElementById(SETTINGS_ID)) {
     if (!root) return;
     const settings = getSettings();
     const dashboard = getSettingsDashboardState(settings);
-    setDashboardCardState(root, 'images', {
-        ready: dashboard.imageReady,
-        title: dashboard.imageTitle,
-        meta: dashboard.imageMeta,
-    });
-    setDashboardCardState(root, 'draft', {
-        ready: dashboard.draftReady,
-        title: dashboard.draftTitle,
-        meta: dashboard.draftMeta,
-    });
-    setDashboardCardState(root, 'recipe', {
-        title: dashboard.recipeTitle,
-        meta: dashboard.recipeMeta,
-    });
-    setDashboardCardState(root, 'references', {
-        title: dashboard.referenceTitle,
-        meta: dashboard.referenceMeta,
-    });
-    const pageMeta = root.querySelector('#bbcf-page-settings-meta');
-    if (pageMeta) pageMeta.textContent = dashboard.recipeMeta;
-    const referenceMeta = root.querySelector('#bbcf-reference-settings-meta');
-    if (referenceMeta) referenceMeta.textContent = dashboard.referenceTitle;
-    const imageMeta = root.querySelector('#bbcf-image-settings-meta');
-    if (imageMeta) imageMeta.textContent = dashboard.imageTitle;
-    const draftMeta = root.querySelector('#bbcf-draft-settings-meta');
-    if (draftMeta) draftMeta.textContent = dashboard.draftTitle;
-    const enabledLabel = root.querySelector('[data-bbcf-enabled-label]');
-    if (enabledLabel) enabledLabel.textContent = settings.enabled ? 'Включено' : 'Выключено';
-    const dashboardTitle = root.querySelector('[data-bbcf-dashboard-heading]');
-    if (dashboardTitle) dashboardTitle.textContent = dashboard.imageReady && dashboard.draftReady
-        ? 'Готово к работе'
-        : 'Заверши настройку';
+    updateSettingsDashboard(root, settings, dashboard);
 }
 
 function createSettingsUi() {
@@ -2248,31 +2212,6 @@ function getLayoutPresetById(layoutId, settings = getSettings()) {
     return resolveLayoutPresetById(layoutId, settings);
 }
 
-function buildModelOptionsHtml(settings) {
-    return getModelSuggestions(settings).map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
-}
-
-function getModelSuggestions(settings = getSettings()) {
-    const stored = filterModelNamesForProvider(Array.isArray(settings.availableModels) ? settings.availableModels : [], settings.apiType);
-    return uniqueStrings([...stored, ...getKnownModelsForProvider(settings.apiType)]).slice(0, 120);
-}
-
-function buildDraftModelOptionsHtml(settings) {
-    return getDraftModelSuggestions(settings).map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
-}
-
-function buildDraftConnectionProfileOptionsHtml(settings, selected = settings.activeDraftConnectionProfileId) {
-    const current = option('', selected, 'Текущие настройки');
-    const saved = settings.draftConnectionProfiles.map(profile => option(profile.id, selected, profile.label)).join('');
-    return `${current}${saved}`;
-}
-
-function buildImageConnectionProfileOptionsHtml(settings, selected = settings.activeImageConnectionProfileId) {
-    const current = option('', selected, 'Текущие настройки');
-    const saved = settings.imageConnectionProfiles.map(profile => option(profile.id, selected, profile.label)).join('');
-    return `${current}${saved}`;
-}
-
 function buildDraftTavernProfileOptionsHtml(settings, selected = settings.draftTavernProfileId) {
     const profiles = getSupportedTavernDraftProfiles();
     const current = option('', selected, 'Текущий профиль SillyTavern');
@@ -2302,14 +2241,6 @@ function getDraftTavernProfileLabel(profileId) {
     }
 }
 
-function getActiveDraftConnectionProfile(settings = getSettings()) {
-    return settings.draftConnectionProfiles.find(profile => profile.id === settings.activeDraftConnectionProfileId) || null;
-}
-
-function getActiveImageConnectionProfile(settings = getSettings()) {
-    return settings.imageConnectionProfiles.find(profile => profile.id === settings.activeImageConnectionProfileId) || null;
-}
-
 function buildDraftPromptPresetOptionsHtml(settings, selected = settings.activeDraftPromptPresetId) {
     const current = option('', selected, 'Текущий черновик');
     const saved = settings.draftPromptPresets.map(preset => option(preset.id, selected, preset.label)).join('');
@@ -2318,39 +2249,6 @@ function buildDraftPromptPresetOptionsHtml(settings, selected = settings.activeD
 
 function getActiveDraftPromptPreset(settings = getSettings()) {
     return settings.draftPromptPresets.find(preset => preset.id === settings.activeDraftPromptPresetId) || null;
-}
-
-function getDraftModelSuggestions(settings = getSettings()) {
-    return filterDraftModelNames(Array.isArray(settings.availableDraftModels) ? settings.availableDraftModels : [], settings.draftConnectionMode);
-}
-
-function getDraftModelPlaceholder(mode) {
-    if (mode === 'gemini') return 'Имя модели Gemini-compatible';
-    if (mode === 'openai-chat') return 'Имя модели OpenAI-compatible';
-    return 'используется модель SillyTavern';
-}
-
-function getEndpointPlaceholder(apiType) {
-    if (apiType === 'onlysq-imagen') return ONLYSQ_IMAGEN_ENDPOINT;
-    if (apiType === 'gemini') return 'https://generativelanguage.googleapis.com';
-    if (apiType === 'openai-chat' || apiType === 'openai-images') return 'https://api.openai.com/v1';
-    if (apiType === 'naistera') return 'https://naistera.org';
-    return 'https://api.example.com';
-}
-
-function getDraftEndpointPlaceholder(mode) {
-    if (mode === 'gemini') return 'https://generativelanguage.googleapis.com';
-    if (mode === 'openai-chat') return 'https://api.openai.com/v1';
-    return 'не требуется';
-}
-
-function getProviderNote(apiType) {
-    if (apiType === 'onlysq-imagen') return 'OnlySQ ImaGen: быстрый режим через Flux и другие поддерживаемые модели. Обычно достаточно ключа и модели.';
-    if (apiType === 'gemini') return 'Gemini хорошо подходит для референсов и образов. Gemini-compatible endpoint можно указывать базой, например /compatible.';
-    if (apiType === 'openai-images') return 'OpenAI Images: без референсов используется /images/generations. С включёнными референсами Comic Forge пробует /images/edits; если источник его не поддерживает, запрос повторяется без файлов — только с текстовыми описаниями референсов. Endpoint можно указывать как /v1 или просто базовый URL.';
-    if (apiType === 'openai-chat') return 'OpenAI chat: режим для прокси, которые умеют возвращать изображения и читать референсы. OpenAI-compatible endpoint можно указывать базовым URL.';
-    if (apiType === 'naistera') return 'Naistera использует отдельные поля model и preset ниже.';
-    return '';
 }
 
 function getDraftConnectionNote(mode) {
