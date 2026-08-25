@@ -33,7 +33,19 @@ import {
     VALID_IMAGE_SIZES,
 } from './src/core/constants.js';
 import { makeId } from './src/core/id.js';
+import { uniqueStrings } from './src/core/strings.js';
 import { ASPECT_PATTERNS, BUBBLE_POSITIONS, DEFAULT_PANEL_BEATS, STYLE_PRESETS } from './src/presets/builtins.js';
+import {
+    extractModelNames,
+    filterDraftModelNames,
+    filterModelNamesForProvider,
+    getKnownModelsForProvider,
+} from './src/providers/models.js';
+import {
+    getImageApiLabel,
+    normalizeDraftConnectionProfiles,
+    normalizeImageConnectionProfiles,
+} from './src/providers/profiles.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_NEGATIVE_PROMPT, DEFAULT_SETTINGS, DRAFT_CAST_DIALOGUE_RULES } from './src/settings/defaults.js';
 import {
     findProfileSeed,
@@ -309,7 +321,7 @@ function getSettings() {
     settings.availableDraftModels = filterDraftModelNames(settings.availableDraftModels, settings.draftConnectionMode);
     settings.draftTemperature = Math.max(0, Math.min(2, Number(settings.draftTemperature ?? DEFAULT_SETTINGS.draftTemperature) || 0));
     settings.draftTavernProfileId = String(settings.draftTavernProfileId || '');
-    settings.draftConnectionProfiles = normalizeDraftConnectionProfiles(settings.draftConnectionProfiles);
+    settings.draftConnectionProfiles = normalizeDraftConnectionProfiles(settings.draftConnectionProfiles, getDraftTavernProfileLabel);
     if (!settings.draftConnectionProfiles.some(profile => profile.id === settings.activeDraftConnectionProfileId)) {
         settings.activeDraftConnectionProfileId = '';
     }
@@ -490,86 +502,6 @@ function migrateDraftPrompt(value) {
         );
     }
     return prompt;
-}
-
-function normalizeDraftConnectionProfiles(rawProfiles) {
-    const profiles = Array.isArray(rawProfiles) ? rawProfiles : [];
-    return profiles
-        .filter(profile => profile && typeof profile === 'object')
-        .map(profile => {
-            const mode = DRAFT_CONNECTION_MODES.includes(profile.draftConnectionMode) ? profile.draftConnectionMode : DEFAULT_SETTINGS.draftConnectionMode;
-            const availableDraftModels = filterDraftModelNames(Array.isArray(profile.availableDraftModels) ? profile.availableDraftModels : [], mode);
-            return {
-                id: String(profile.id || makeId('draft-connection')),
-                label: String(profile.label || profile.name || getDraftConnectionProfileFallbackLabel(profile, mode)).trim(),
-                draftConnectionMode: mode,
-                draftEndpoint: String(profile.draftEndpoint || ''),
-                draftApiKey: String(profile.draftApiKey || ''),
-                draftModel: String(profile.draftModel || ''),
-                availableDraftModels,
-                draftTemperature: Math.max(0, Math.min(2, Number(profile.draftTemperature ?? DEFAULT_SETTINGS.draftTemperature) || 0)),
-                draftTavernProfileId: String(profile.draftTavernProfileId || profile.tavernProfileId || ''),
-            };
-        })
-        .filter(profile => profile.id && profile.label)
-        .slice(0, 40);
-}
-
-function normalizeImageConnectionProfiles(rawProfiles) {
-    const profiles = Array.isArray(rawProfiles) ? rawProfiles : [];
-    return profiles
-        .filter(profile => profile && typeof profile === 'object')
-        .map(profile => {
-            const apiType = IMAGE_API_TYPES.includes(profile.apiType) ? profile.apiType : DEFAULT_SETTINGS.apiType;
-            const availableModels = filterModelNamesForProvider(Array.isArray(profile.availableModels) ? profile.availableModels : [], apiType);
-            const aspectRatio = VALID_ASPECT_RATIOS.includes(profile.aspectRatio) || profile.aspectRatio === 'auto'
-                ? profile.aspectRatio
-                : DEFAULT_SETTINGS.aspectRatio;
-            const naisteraAspectRatio = VALID_ASPECT_RATIOS.includes(profile.naisteraAspectRatio) || profile.naisteraAspectRatio === 'auto'
-                ? profile.naisteraAspectRatio
-                : DEFAULT_SETTINGS.naisteraAspectRatio;
-            return {
-                id: String(profile.id || makeId('image-connection')),
-                label: String(profile.label || profile.name || getImageConnectionProfileFallbackLabel(profile, apiType)).trim(),
-                apiType,
-                endpoint: String(profile.endpoint || ''),
-                apiKey: String(profile.apiKey || ''),
-                model: String(profile.model || ''),
-                availableModels,
-                openaiSize: OPENAI_IMAGE_SIZES.includes(profile.openaiSize) ? profile.openaiSize : DEFAULT_SETTINGS.openaiSize,
-                openaiQuality: OPENAI_IMAGE_QUALITIES.includes(profile.openaiQuality) ? profile.openaiQuality : DEFAULT_SETTINGS.openaiQuality,
-                aspectRatio,
-                imageSize: VALID_IMAGE_SIZES.includes(profile.imageSize) ? profile.imageSize : DEFAULT_SETTINGS.imageSize,
-                naisteraModel: String(profile.naisteraModel || DEFAULT_SETTINGS.naisteraModel),
-                naisteraAspectRatio,
-                naisteraPreset: String(profile.naisteraPreset || DEFAULT_SETTINGS.naisteraPreset),
-            };
-        })
-        .filter(profile => profile.id && profile.label)
-        .slice(0, 40);
-}
-
-function getImageConnectionProfileFallbackLabel(profile = {}, apiType = DEFAULT_SETTINGS.apiType) {
-    const model = String(profile.model || profile.naisteraModel || '').trim();
-    if (model) return model;
-    return getImageApiLabel(apiType);
-}
-
-function getImageApiLabel(apiType) {
-    if (apiType === 'onlysq-imagen') return 'OnlySQ ImaGen';
-    if (apiType === 'openai-images') return 'OpenAI Images';
-    if (apiType === 'openai-chat') return 'OpenAI Chat Images';
-    if (apiType === 'gemini') return 'Gemini';
-    if (apiType === 'naistera') return 'Naistera';
-    return 'Image API';
-}
-
-function getDraftConnectionProfileFallbackLabel(profile = {}, mode = DEFAULT_SETTINGS.draftConnectionMode) {
-    const model = String(profile.draftModel || '').trim();
-    if (model) return model;
-    if (mode === 'sillytavern') return getDraftTavernProfileLabel(profile.draftTavernProfileId || profile.tavernProfileId) || 'SillyTavern';
-    if (mode === 'gemini') return 'Gemini draft';
-    return 'OpenAI draft';
 }
 
 function normalizeDraftPromptPresets(rawPresets) {
@@ -2676,15 +2608,6 @@ function getModelSuggestions(settings = getSettings()) {
     return uniqueStrings([...stored, ...getKnownModelsForProvider(settings.apiType)]).slice(0, 120);
 }
 
-function getKnownModelsForProvider(apiType) {
-    if (apiType === 'onlysq-imagen') return ['flux', 'grok'];
-    if (apiType === 'openai-images') return ['gpt-image-1', 'dall-e-3', 'dall-e-2'];
-    if (apiType === 'openai-chat') return ['gpt-image-1', 'grok-2-image', 'gemini-2.5-flash-image-preview', 'nano banana'];
-    if (apiType === 'gemini') return ['gemini-2.5-flash-image-preview', 'gemini-2.0-flash-preview-image-generation'];
-    if (apiType === 'naistera') return ['nano banana', 'grok', 'grok-pro', 'novelai'];
-    return [];
-}
-
 function buildDraftModelOptionsHtml(settings) {
     return getDraftModelSuggestions(settings).map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
 }
@@ -3029,18 +2952,6 @@ function saveLayoutFromDraft(root) {
     toastr.success('Макет сохранён.', 'Comic Forge');
 }
 
-function uniqueStrings(values) {
-    const seen = new Set();
-    const result = [];
-    for (const value of values) {
-        const text = String(value || '').trim();
-        if (!text || seen.has(text)) continue;
-        seen.add(text);
-        result.push(text);
-    }
-    return result;
-}
-
 async function loadProviderModels({ button = null, silent = false } = {}) {
     const settings = getSettings();
     const previousHtml = button?.innerHTML;
@@ -3163,62 +3074,6 @@ async function fetchDraftModels(settings) {
 
 function isUnsupportedModelListError(error) {
     return /\bAPI (404|405|501)\b|method not allowed|not found|cannot get|unsupported/i.test(error?.message || '');
-}
-
-function extractModelNames(payload, apiType) {
-    const names = [];
-    const visit = value => {
-        if (!value) return;
-        if (typeof value === 'string') {
-            if (/^[a-z0-9][a-z0-9._:/+-]{1,80}$/i.test(value)) names.push(value.replace(/^models\//, ''));
-            return;
-        }
-        if (Array.isArray(value)) {
-            value.forEach(visit);
-            return;
-        }
-        if (typeof value === 'object') {
-            const candidate = value.id || value.name || value.model;
-            if (candidate) names.push(String(candidate).replace(/^models\//, ''));
-            Object.values(value).forEach(visit);
-        }
-    };
-    visit(payload?.data || payload?.models || payload);
-    return filterModelNamesForProvider(names, apiType);
-}
-
-function filterModelNamesForProvider(names, apiType) {
-    const all = uniqueStrings(names);
-    if (apiType === 'onlysq-imagen') {
-        const imageModels = all.filter(model => /flux|grok|imagen|image/i.test(model));
-        return imageModels.length ? imageModels : getKnownModelsForProvider(apiType);
-    }
-    if (apiType === 'openai-images') {
-        const imageModels = all.filter(model => /gpt-image|dall|image|imagen|flux|sdxl|stable|midjourney/i.test(model));
-        return imageModels.length ? imageModels : getKnownModelsForProvider(apiType);
-    }
-    if (apiType === 'openai-chat') {
-        const chatImageModels = all.filter(model => /image|imagen|vision|banana|gemini|grok|flux/i.test(model));
-        return chatImageModels.length ? chatImageModels : getKnownModelsForProvider(apiType);
-    }
-    if (apiType === 'gemini') {
-        const geminiModels = all.filter(model => /image|imagen|gemini|banana|flash/i.test(model));
-        return geminiModels.length ? geminiModels : getKnownModelsForProvider(apiType);
-    }
-    return all.length ? all : getKnownModelsForProvider(apiType);
-}
-
-function filterDraftModelNames(names, mode) {
-    const all = uniqueStrings(names);
-    if (mode === 'gemini') {
-        const geminiModels = all.filter(model => /gemini|flash|pro/i.test(model));
-        return geminiModels.length ? geminiModels : all;
-    }
-    if (mode === 'openai-chat') {
-        const textModels = all.filter(model => !/embedding|audio|tts|whisper|moderation|image|dall/i.test(model));
-        return textModels.length ? textModels : all;
-    }
-    return [];
 }
 
 function updateFloatingButton() {
