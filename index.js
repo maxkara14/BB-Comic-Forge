@@ -53,6 +53,7 @@ import {
 import { hydrateScopedSettings, persistCharacterLockProfileValue, persistWardrobeProfile } from './src/settings/profiles.js';
 import { buildScopedProfileFallbackKeys, buildScopedProfileKey } from './src/settings/scope.js';
 import { isDisclosureExpanded, setDisclosureExpanded, upgradeDisclosures } from './src/ui/disclosure.js';
+import { decodeJsonAttr, encodeJsonAttr, escapeHtml, option, stripHtml } from './src/ui/html.js';
 import {
     REFERENCE_SLOTS,
     WARDROBE_CATEGORIES,
@@ -2237,10 +2238,6 @@ function deleteDraftPromptPreset(root = null) {
     saveSettings();
     syncDraftPromptPresetUi({ forceName: true });
     toastr.success('Набор черновика удалён.', 'Comic Forge');
-}
-
-function option(value, selected, label = value) {
-    return `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
 }
 
 function getStylePresetById(styleId, settings = getSettings()) {
@@ -6659,12 +6656,6 @@ function collectRecentChat(count) {
     }).join('\n\n').slice(0, 5000);
 }
 
-function stripHtml(value) {
-    const template = document.createElement('template');
-    template.innerHTML = String(value || '');
-    return (template.content.textContent || '').replace(/\s+/g, ' ').trim();
-}
-
 function getCurrentCharacterName() {
     const context = SillyTavern.getContext();
     if (context.characterId !== undefined && context.characters?.[context.characterId]) {
@@ -6695,25 +6686,4 @@ function getScopedProfileFallbackKeys() {
 
 function getScopedProfileKey() {
     return buildScopedProfileKey(SillyTavern.getContext());
-}
-
-function encodeJsonAttr(value) {
-    const json = JSON.stringify(value);
-    const bytes = new TextEncoder().encode(json);
-    let binary = '';
-    bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function decodeJsonAttr(value) {
-    const padded = String(value || '').replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(String(value || '').length / 4) * 4, '=');
-    const binary = atob(padded);
-    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes));
-}
-
-function escapeHtml(value) {
-    const div = document.createElement('div');
-    div.textContent = String(value ?? '');
-    return div.innerHTML;
 }
