@@ -1012,6 +1012,172 @@ function clampInt(value, min, max, fallback) {
     return Math.min(max, Math.max(min, Math.trunc(number)));
 }
 
+function getSettingsDashboardState(settings = getSettings()) {
+    const imageProfile = getActiveImageConnectionProfile(settings);
+    const draftProfile = getActiveDraftConnectionProfile(settings);
+    const draftPreset = getActiveDraftPromptPreset(settings);
+    const style = getStylePresetById(settings.stylePreset, settings);
+    const layout = getLayoutPresetById(settings.layout, settings);
+    const enabledReferences = settings.references.filter(reference => reference.enabled && reference.path).length;
+    const activeWardrobe = settings.wardrobeEnabled ? getWardrobeActiveEntries(settings).length : 0;
+    const imageNeedsModel = settings.apiType !== 'naistera';
+    const imageReady = Boolean(settings.apiKey
+        && (!imageNeedsModel || settings.model)
+        && (settings.endpoint || ['onlysq-imagen', 'naistera'].includes(settings.apiType)));
+    const selectedTavernDraftProfileExists = !settings.draftTavernProfileId
+        || getSupportedTavernDraftProfiles().some(profile => profile.id === settings.draftTavernProfileId);
+    const draftReady = settings.draftConnectionMode === 'sillytavern'
+        ? selectedTavernDraftProfileExists
+        : Boolean(settings.draftModel && settings.draftEndpoint && (settings.draftApiKey || settings.apiKey));
+    return {
+        imageReady,
+        imageTitle: imageProfile?.label || settings.model || getImageApiLabel(settings.apiType),
+        imageMeta: [getImageApiLabel(settings.apiType), settings.model].filter(Boolean).join(' · '),
+        draftReady,
+        draftTitle: draftProfile?.label || (settings.draftConnectionMode === 'sillytavern' ? 'Текущая модель SillyTavern' : settings.draftModel || 'AI-черновик'),
+        draftMeta: getDraftConnectionNote(settings.draftConnectionMode),
+        recipeTitle: draftPreset?.label || style?.label || 'Текущие настройки страницы',
+        recipeMeta: [
+            style?.label,
+            layout?.label || settings.layout,
+            `${settings.panelCount} пан.`,
+            settings.generationMode === 'single' ? 'экономно' : 'по панелям',
+        ].filter(Boolean).join(' · '),
+        referenceTitle: enabledReferences || activeWardrobe ? `${enabledReferences} реф. · ${activeWardrobe} вещей` : 'Референсы не добавлены',
+        referenceMeta: activeWardrobe ? 'Персонажи и активный гардероб' : 'Персонажи и гардероб',
+    };
+}
+
+function setDashboardCardState(root, key, { ready = true, title = '', meta = '' } = {}) {
+    const card = root?.querySelector(`[data-bbcf-dashboard-card="${key}"]`);
+    if (!card) return;
+    card.classList.toggle('is-ready', ready);
+    card.classList.toggle('needs-attention', !ready);
+    const titleNode = card.querySelector('[data-bbcf-dashboard-title]');
+    const metaNode = card.querySelector('[data-bbcf-dashboard-meta]');
+    const statusNode = card.querySelector('[data-bbcf-dashboard-status]');
+    if (titleNode) titleNode.textContent = title;
+    if (metaNode) metaNode.textContent = meta;
+    if (statusNode) {
+        statusNode.className = `bbcf-status-chip ${ready ? 'is-ready' : 'needs-attention'}`;
+        statusNode.innerHTML = ready
+            ? '<i class="fa-solid fa-check"></i><span>Готово</span>'
+            : '<i class="fa-solid fa-circle-exclamation"></i><span>Настроить</span>';
+    }
+}
+
+function refreshSettingsDashboard(root = document.getElementById(SETTINGS_ID)) {
+    if (!root) return;
+    const settings = getSettings();
+    const dashboard = getSettingsDashboardState(settings);
+    setDashboardCardState(root, 'images', {
+        ready: dashboard.imageReady,
+        title: dashboard.imageTitle,
+        meta: dashboard.imageMeta,
+    });
+    setDashboardCardState(root, 'draft', {
+        ready: dashboard.draftReady,
+        title: dashboard.draftTitle,
+        meta: dashboard.draftMeta,
+    });
+    setDashboardCardState(root, 'recipe', {
+        title: dashboard.recipeTitle,
+        meta: dashboard.recipeMeta,
+    });
+    setDashboardCardState(root, 'references', {
+        title: dashboard.referenceTitle,
+        meta: dashboard.referenceMeta,
+    });
+    const pageMeta = root.querySelector('#bbcf-page-settings-meta');
+    if (pageMeta) pageMeta.textContent = dashboard.recipeMeta;
+    const referenceMeta = root.querySelector('#bbcf-reference-settings-meta');
+    if (referenceMeta) referenceMeta.textContent = dashboard.referenceTitle;
+    const imageMeta = root.querySelector('#bbcf-image-settings-meta');
+    if (imageMeta) imageMeta.textContent = dashboard.imageTitle;
+    const draftMeta = root.querySelector('#bbcf-draft-settings-meta');
+    if (draftMeta) draftMeta.textContent = dashboard.draftTitle;
+    const enabledLabel = root.querySelector('[data-bbcf-enabled-label]');
+    if (enabledLabel) enabledLabel.textContent = settings.enabled ? 'Включено' : 'Выключено';
+    const dashboardTitle = root.querySelector('[data-bbcf-dashboard-heading]');
+    if (dashboardTitle) dashboardTitle.textContent = dashboard.imageReady && dashboard.draftReady
+        ? 'Готово к работе'
+        : 'Заверши настройку';
+}
+
+const detailsAnimationState = new WeakMap();
+
+function prefersReducedMotion() {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+function getCollapsedDetailsHeight(details, summary) {
+    const styles = window.getComputedStyle(details);
+    const chrome = ['borderTopWidth', 'borderBottomWidth', 'paddingTop', 'paddingBottom']
+        .reduce((total, property) => total + (Number.parseFloat(styles[property]) || 0), 0);
+    return summary.getBoundingClientRect().height + chrome;
+}
+
+function setAnimatedDetailsState(details, expanded) {
+    const summary = details?.querySelector(':scope > summary');
+    if (!summary) return;
+    const shouldExpand = Boolean(expanded);
+    const current = detailsAnimationState.get(details);
+    if (!current && details.open === shouldExpand) return;
+    if (prefersReducedMotion() || typeof details.animate !== 'function') {
+        current?.animation?.cancel();
+        detailsAnimationState.delete(details);
+        delete details.dataset.bbcfAnimation;
+        details.style.removeProperty('height');
+        details.style.removeProperty('overflow');
+        details.open = shouldExpand;
+        summary.setAttribute('aria-expanded', String(shouldExpand));
+        return;
+    }
+
+    const startHeight = details.getBoundingClientRect().height;
+    current?.animation?.cancel();
+    if (shouldExpand) details.open = true;
+    const endHeight = shouldExpand
+        ? details.scrollHeight + Math.max(0, details.offsetHeight - details.clientHeight)
+        : getCollapsedDetailsHeight(details, summary);
+    const duration = Math.min(280, Math.max(180, Math.abs(endHeight - startHeight) * 0.35));
+    details.dataset.bbcfAnimation = shouldExpand ? 'opening' : 'closing';
+    details.style.overflow = 'hidden';
+    summary.setAttribute('aria-expanded', String(shouldExpand));
+    const animation = details.animate(
+        { height: [`${startHeight}px`, `${endHeight}px`] },
+        { duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    );
+    detailsAnimationState.set(details, { animation, expanded: shouldExpand });
+    animation.onfinish = () => {
+        if (detailsAnimationState.get(details)?.animation !== animation) return;
+        if (!shouldExpand) details.open = false;
+        details.style.removeProperty('height');
+        details.style.removeProperty('overflow');
+        delete details.dataset.bbcfAnimation;
+        detailsAnimationState.delete(details);
+        summary.setAttribute('aria-expanded', String(shouldExpand));
+    };
+}
+
+function bindAnimatedDetails(root) {
+    root?.querySelectorAll('details').forEach(details => {
+        const summary = details.querySelector(':scope > summary');
+        if (!summary || details.classList.contains('bbcf-animated-details')) return;
+        details.classList.add('bbcf-animated-details');
+        summary.setAttribute('aria-expanded', String(details.open));
+        summary.addEventListener('click', event => {
+            if (prefersReducedMotion() || typeof details.animate !== 'function') return;
+            event.preventDefault();
+            const isClosing = details.dataset.bbcfAnimation === 'closing';
+            setAnimatedDetailsState(details, isClosing || !details.open);
+        });
+        details.addEventListener('toggle', () => {
+            if (!details.dataset.bbcfAnimation) summary.setAttribute('aria-expanded', String(details.open));
+        });
+    });
+}
+
 function createSettingsUi() {
     if (document.getElementById(SETTINGS_ID)) return;
     const container = document.getElementById('extensions_settings');
@@ -1030,18 +1196,50 @@ function createSettingsUi() {
         </div>
         <div class="inline-drawer-content">
             <div class="bbcf-settings-body">
-                <section class="bbcf-section">
-                    <h4 class="bbcf-section-title"><i class="fa-solid fa-power-off"></i> Основное</h4>
-                    <label class="checkbox_label"><input type="checkbox" id="bbcf-enabled" ${settings.enabled ? 'checked' : ''}> <span>Включить Comic Forge</span></label>
-                    <label class="checkbox_label"><input type="checkbox" id="bbcf-show-fab" ${settings.showFab ? 'checked' : ''}> <span>Показывать плавающую кнопку</span></label>
-                    <label class="checkbox_label"><input type="checkbox" id="bbcf-auto-mode" ${settings.autoMode ? 'checked' : ''}> <span>Автоматически после ответа бота</span></label>
-                    <div class="bbcf-actions">
-                        <button class="menu_button bbcf-primary" type="button" id="bbcf-open-modal"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Открыть кузницу</span></button>
+                <section class="bbcf-section bbcf-dashboard">
+                    <div class="bbcf-dashboard-heading">
+                        <div>
+                            <span class="bbcf-eyebrow">Быстрый запуск</span>
+                            <h4 class="bbcf-section-title"><i class="fa-solid fa-wand-magic-sparkles"></i><span data-bbcf-dashboard-heading>Готово к работе</span></h4>
+                        </div>
+                        <label class="bbcf-toggle-pill"><input type="checkbox" id="bbcf-enabled" ${settings.enabled ? 'checked' : ''}><span data-bbcf-enabled-label>${settings.enabled ? 'Включено' : 'Выключено'}</span></label>
                     </div>
+                    <div class="bbcf-dashboard-grid">
+                        <button class="bbcf-dashboard-card" type="button" data-bbcf-dashboard-card="images" data-bbcf-open-settings="bbcf-image-settings">
+                            <span class="bbcf-dashboard-icon"><i class="fa-solid fa-image"></i></span>
+                            <span class="bbcf-dashboard-copy"><strong data-bbcf-dashboard-title>Генерация изображений</strong><small data-bbcf-dashboard-meta></small></span>
+                            <span data-bbcf-dashboard-status></span>
+                            <i class="fa-solid fa-chevron-right bbcf-dashboard-arrow"></i>
+                        </button>
+                        <button class="bbcf-dashboard-card" type="button" data-bbcf-dashboard-card="draft" data-bbcf-open-settings="bbcf-draft-settings">
+                            <span class="bbcf-dashboard-icon"><i class="fa-solid fa-scroll"></i></span>
+                            <span class="bbcf-dashboard-copy"><strong data-bbcf-dashboard-title>AI-черновик</strong><small data-bbcf-dashboard-meta></small></span>
+                            <span data-bbcf-dashboard-status></span>
+                            <i class="fa-solid fa-chevron-right bbcf-dashboard-arrow"></i>
+                        </button>
+                        <button class="bbcf-dashboard-card" type="button" data-bbcf-dashboard-card="recipe" data-bbcf-open-settings="bbcf-page-settings">
+                            <span class="bbcf-dashboard-icon"><i class="fa-solid fa-palette"></i></span>
+                            <span class="bbcf-dashboard-copy"><strong data-bbcf-dashboard-title>Настройки страницы</strong><small data-bbcf-dashboard-meta></small></span>
+                            <i class="fa-solid fa-chevron-right bbcf-dashboard-arrow"></i>
+                        </button>
+                        <button class="bbcf-dashboard-card" type="button" data-bbcf-dashboard-card="references" data-bbcf-open-settings="bbcf-reference-settings">
+                            <span class="bbcf-dashboard-icon"><i class="fa-solid fa-user-group"></i></span>
+                            <span class="bbcf-dashboard-copy"><strong data-bbcf-dashboard-title>Персонажи и гардероб</strong><small data-bbcf-dashboard-meta></small></span>
+                            <i class="fa-solid fa-chevron-right bbcf-dashboard-arrow"></i>
+                        </button>
+                    </div>
+                    <button class="menu_button bbcf-primary bbcf-dashboard-open" type="button" id="bbcf-open-modal"><i class="fa-solid fa-book-open"></i><span>Открыть кузницу</span></button>
+                    <details class="bbcf-dashboard-preferences">
+                        <summary><i class="fa-solid fa-sliders"></i><span>Поведение расширения</span></summary>
+                        <div class="bbcf-dashboard-preferences-body">
+                            <label class="checkbox_label"><input type="checkbox" id="bbcf-show-fab" ${settings.showFab ? 'checked' : ''}> <span>Показывать плавающую кнопку</span></label>
+                            <label class="checkbox_label"><input type="checkbox" id="bbcf-auto-mode" ${settings.autoMode ? 'checked' : ''}> <span>Автоматически после ответа бота</span></label>
+                        </div>
+                    </details>
                 </section>
 
-                <section class="bbcf-section">
-                    <h4 class="bbcf-section-title"><i class="fa-solid fa-plug"></i> API генерации картинок</h4>
+                <details class="bbcf-section bbcf-settings-details" id="bbcf-image-settings">
+                    <summary class="bbcf-section-title"><i class="fa-solid fa-plug"></i><span>Генерация изображений</span><small id="bbcf-image-settings-meta"></small></summary>
                     <p class="bbcf-hint bbcf-provider-note" id="bbcf-provider-note"></p>
                     <div class="bbcf-compact-tools">
                         <div class="bbcf-row">
@@ -1139,10 +1337,10 @@ function createSettingsUi() {
                     <div class="bbcf-actions">
                         <button class="menu_button" type="button" id="bbcf-test-api"><i class="fa-solid fa-wifi"></i><span>Проверить</span></button>
                     </div>
-                </section>
+                </details>
 
-                <section class="bbcf-section">
-                    <h4 class="bbcf-section-title"><i class="fa-solid fa-scroll"></i> AI-черновик</h4>
+                <details class="bbcf-section bbcf-settings-details" id="bbcf-draft-settings">
+                    <summary class="bbcf-section-title"><i class="fa-solid fa-scroll"></i><span>AI-черновик</span><small id="bbcf-draft-settings-meta"></small></summary>
                     <p class="bbcf-hint bbcf-draft-connection-note" id="bbcf-draft-connection-note"></p>
                     <div class="bbcf-compact-tools">
                         <div class="bbcf-row">
@@ -1199,10 +1397,10 @@ function createSettingsUi() {
                         <button class="menu_button bbcf-draft-connection-row" type="button" id="bbcf-load-draft-models"><i class="fa-solid fa-plug-circle-bolt"></i><span>Подключить</span></button>
                         <button class="menu_button" type="button" id="bbcf-test-draft-api"><i class="fa-solid fa-wifi"></i><span>Проверить черновик</span></button>
                     </div>
-                </section>
+                </details>
 
-                <section class="bbcf-section">
-                    <h4 class="bbcf-section-title"><i class="fa-solid fa-user-group"></i> Референсы персонажей</h4>
+                <details class="bbcf-section bbcf-settings-details" id="bbcf-reference-settings">
+                    <summary class="bbcf-section-title"><i class="fa-solid fa-user-group"></i><span>Персонажи и гардероб</span><small id="bbcf-reference-settings-meta"></small></summary>
                     <div class="bbcf-ref-grid">
                         ${buildReferenceSettingsHtml(settings)}
                     </div>
@@ -1225,10 +1423,10 @@ function createSettingsUi() {
                             ${buildWardrobeSummaryHtml(settings)}
                         </div>
                     </div>
-                </section>
+                </details>
 
-                <details class="bbcf-section bbcf-settings-details">
-                    <summary class="bbcf-section-title"><i class="fa-solid fa-table-cells-large"></i> <span>Страница по умолчанию</span></summary>
+                <details class="bbcf-section bbcf-settings-details" id="bbcf-page-settings">
+                    <summary class="bbcf-section-title"><i class="fa-solid fa-table-cells-large"></i><span>Страница и тонкая настройка</span><small id="bbcf-page-settings-meta"></small></summary>
                     <div class="bbcf-grid-2">
                         <div class="bbcf-row">
                             <label for="bbcf-generation-mode">Режим</label>
@@ -1378,16 +1576,33 @@ function createSettingsUi() {
         </div>
     `;
     container.appendChild(wrapper);
+    bindAnimatedDetails(wrapper);
     bindSettingsUi(wrapper);
     syncProviderRows();
     syncImageConnectionProfileUi(wrapper);
     syncDraftConnectionRows();
     syncDraftConnectionProfileUi(wrapper);
     syncDraftPromptPresetUi({ forceName: true });
+    refreshSettingsDashboard(wrapper);
 }
 
 function bindSettingsUi(root) {
     root.querySelector('#bbcf-open-modal')?.addEventListener('click', openForgeModal);
+    root.querySelectorAll('[data-bbcf-open-settings]').forEach(button => {
+        const section = root.querySelector(`#${button.dataset.bbcfOpenSettings}`);
+        if (!(section instanceof HTMLDetailsElement)) return;
+        const syncExpandedState = () => button.setAttribute('aria-expanded', String(section.open));
+        button.setAttribute('aria-controls', section.id);
+        syncExpandedState();
+        section.addEventListener('toggle', syncExpandedState);
+        button.addEventListener('click', () => {
+            const shouldOpen = !section.open || section.dataset.bbcfAnimation === 'closing';
+            button.setAttribute('aria-expanded', String(shouldOpen));
+            setAnimatedDetailsState(section, shouldOpen);
+            if (shouldOpen) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+    root.addEventListener('change', () => setTimeout(() => refreshSettingsDashboard(root), 0));
     root.querySelector('#bbcf-test-api')?.addEventListener('click', testApiSettings);
     root.querySelector('#bbcf-load-models')?.addEventListener('click', () => loadProviderModels({ button: root.querySelector('#bbcf-load-models') }));
     root.querySelector('#bbcf-load-draft-models')?.addEventListener('click', () => loadDraftModels({ button: root.querySelector('#bbcf-load-draft-models') }));
@@ -2497,6 +2712,7 @@ function syncProviderRows() {
     const note = root.querySelector('#bbcf-provider-note');
     if (note) note.textContent = getProviderNote(settings.apiType);
     updateModelPicker(root);
+    refreshSettingsDashboard(root);
 }
 
 function syncImageConnectionProfileUi(root = document.getElementById(SETTINGS_ID), { forceName = false } = {}) {
@@ -2622,6 +2838,7 @@ function syncDraftConnectionRows() {
     updateSelectOptions(root.querySelector('#bbcf-draft-tavern-profile'), buildDraftTavernProfileOptionsHtml(settings), settings.draftTavernProfileId);
     const note = root.querySelector('#bbcf-draft-connection-note');
     if (note) note.textContent = getDraftConnectionNote(settings.draftConnectionMode);
+    refreshSettingsDashboard(root);
 }
 
 function syncDraftConnectionProfileUi(root = document.getElementById(SETTINGS_ID), { forceName = false } = {}) {
@@ -2720,6 +2937,8 @@ function syncDraftPromptPresetUi({ forceName = false } = {}) {
         const deleteButton = target.root.querySelector(target.del);
         if (deleteButton) deleteButton.disabled = !active;
     }
+    refreshSettingsDashboard(settingsRoot);
+    refreshForgeWorkflowSummary(modalRoot);
 }
 
 function applyDraftPromptPreset(root, { source = 'settings' } = {}) {
@@ -2731,6 +2950,7 @@ function applyDraftPromptPreset(root, { source = 'settings' } = {}) {
         settings.activeDraftPromptPresetId = '';
         saveSettings();
         syncDraftPromptPresetUi({ forceName: true });
+        refreshForgeWorkflowSummary(root);
         return;
     }
     settings.activeDraftPromptPresetId = preset.id;
@@ -2783,6 +3003,7 @@ function applyDraftPromptPreset(root, { source = 'settings' } = {}) {
         syncDefaultDraftFields(DRAFT_SYNC_FIELDS);
     }
     syncDraftPromptPresetUi({ forceName: true });
+    refreshForgeWorkflowSummary(state.modal);
     toastr.success('Набор черновика применён.', 'Comic Forge');
 }
 
@@ -3101,6 +3322,8 @@ function syncPresetUi({ styleValue = null, layoutValue = null } = {}) {
         const list = root.querySelector('[data-bbcf-preset-list]');
         if (list) list.innerHTML = `${buildStyleExamplesHtml(settings)}${buildLayoutExamplesHtml(settings)}`;
     }
+    refreshSettingsDashboard(settingsRoot);
+    refreshForgeWorkflowSummary(draftRoot);
 }
 
 function updateSelectOptions(select, html, value) {
@@ -3489,6 +3712,82 @@ function placeChatLauncherButton(button, host, wrapper = null) {
     if (launcher.parentElement !== host) host.appendChild(launcher);
 }
 
+function getSelectedControlLabel(root, selector, fallback = '') {
+    const select = root?.querySelector(selector);
+    return select?.selectedOptions?.[0]?.textContent?.trim() || fallback;
+}
+
+function refreshForgeWorkflowSummary(root = state.modal) {
+    if (!root?.isConnected) return;
+    const settings = getSettings();
+    const panelCount = clampInt(valueOf(root, '#bbcf-draft-count'), 1, MAX_PANELS, settings.panelCount);
+    const generationMode = valueOf(root, '#bbcf-draft-mode') === 'single' ? 'экономно' : 'по панелям';
+    const layoutLabel = getSelectedControlLabel(root, '#bbcf-draft-layout', settings.layout);
+    const styleLabel = getSelectedControlLabel(root, '#bbcf-draft-style', getStylePresetById(settings.stylePreset, settings)?.label || 'Стиль');
+    const selectedDraftPreset = root.querySelector('#bbcf-forge-draft-prompt-preset');
+    const draftPresetLabel = selectedDraftPreset?.value ? getSelectedControlLabel(root, '#bbcf-forge-draft-prompt-preset') : '';
+    const recipeTitle = root.querySelector('#bbcf-forge-recipe-title');
+    const recipeMeta = root.querySelector('#bbcf-forge-recipe-meta');
+    if (recipeTitle) recipeTitle.textContent = draftPresetLabel || styleLabel || 'Текущие настройки';
+    if (recipeMeta) recipeMeta.textContent = `${layoutLabel} · ${panelCount} пан. · ${generationMode}`;
+    const pageSummary = root.querySelector('#bbcf-forge-page-summary');
+    if (pageSummary) pageSummary.textContent = `${styleLabel} · ${layoutLabel} · ${panelCount} пан. · ${generationMode}`;
+
+    const characterText = valueOf(root, '#bbcf-draft-lock').trim();
+    const referenceCount = settings.references.filter(reference => reference.enabled && reference.path).length;
+    const wardrobeCount = settings.wardrobeEnabled ? getWardrobeActiveEntries(settings).length : 0;
+    const characterSummary = root.querySelector('#bbcf-forge-character-summary');
+    if (characterSummary) {
+        const parts = [characterText ? 'описание заполнено' : 'описание не заполнено'];
+        if (referenceCount) parts.push(`${referenceCount} реф.`);
+        if (wardrobeCount) parts.push(`${wardrobeCount} вещей`);
+        characterSummary.textContent = parts.join(' · ');
+    }
+
+    const panelLines = splitLines(valueOf(root, '#bbcf-draft-notes')).length;
+    const bubbleLines = splitLines(valueOf(root, '#bbcf-draft-bubbles')).length;
+    const insertLines = splitLines(valueOf(root, '#bbcf-draft-inserts')).length;
+    const sfxLines = splitLines(valueOf(root, '#bbcf-draft-sfx')).length;
+    const panelSummary = root.querySelector('#bbcf-forge-panel-summary');
+    if (panelSummary) {
+        const parts = [panelLines ? `${panelLines} пан.` : 'план не заполнен'];
+        if (bubbleLines) parts.push(`${bubbleLines} репл.`);
+        if (insertLines) parts.push(`${insertLines} встав.`);
+        if (sfxLines) parts.push(`${sfxLines} SFX`);
+        panelSummary.textContent = parts.join(' · ');
+    }
+
+    const customPrompt = valueOf(root, '#bbcf-draft-custom-style').trim();
+    const negativePrompt = valueOf(root, '#bbcf-draft-negative').trim();
+    const tuningSummary = root.querySelector('#bbcf-forge-tuning-summary');
+    if (tuningSummary) {
+        const parts = [draftPresetLabel || 'текущий черновик'];
+        if (customPrompt) parts.push('есть доп. инструкции');
+        if (negativePrompt) parts.push('есть negative prompt');
+        tuningSummary.textContent = parts.join(' · ');
+    }
+
+    const sceneReady = Boolean(valueOf(root, '#bbcf-draft-scene').trim());
+    const ready = root.querySelector('.bbcf-generate-ready');
+    if (ready) {
+        ready.classList.toggle('needs-attention', !sceneReady);
+        ready.innerHTML = sceneReady
+            ? '<i class="fa-solid fa-circle-check"></i><span>Черновик сохраняется автоматически</span>'
+            : '<i class="fa-solid fa-circle-exclamation"></i><span>Добавь сцену или создай черновик из чата</span>';
+    }
+}
+
+function setForgeMobileView(root, view = 'editor') {
+    if (!root?.isConnected) return;
+    const nextView = view === 'preview' ? 'preview' : 'editor';
+    root.dataset.mobileView = nextView;
+    root.querySelectorAll('[data-bbcf-mobile-view]').forEach(button => {
+        const isActive = button.dataset.bbcfMobileView === nextView;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-selected', String(isActive));
+    });
+}
+
 function openForgeModal(options = {}) {
     if (!getSettings().enabled) {
         toastr.warning('BB Comic Forge отключен в настройках.', 'Comic Forge');
@@ -3517,8 +3816,27 @@ function openForgeModal(options = {}) {
                     <button class="bbcf-modal-action bbcf-modal-dismiss" type="button" title="Закрыть окно кузницы" aria-label="Закрыть кузницу" data-bbcf-close><i class="fa-solid fa-xmark"></i><span>Закрыть</span></button>
                 </div>
             </header>
+            <div class="bbcf-mobile-view-tabs" role="tablist" aria-label="Раздел кузницы">
+                <button type="button" class="is-active" role="tab" aria-selected="true" aria-controls="bbcf-draft-form" data-bbcf-mobile-view="editor"><i class="fa-solid fa-pen-to-square"></i><span>Редактор</span></button>
+                <button type="button" role="tab" aria-selected="false" aria-controls="bbcf-preview-panel" data-bbcf-mobile-view="preview"><i class="fa-solid fa-image"></i><span>Превью</span></button>
+            </div>
             <div class="bbcf-modal-body">
                 <form class="bbcf-form" id="bbcf-draft-form">
+                    <section class="bbcf-recipe-bar">
+                        <div class="bbcf-recipe-icon"><i class="fa-solid fa-palette"></i></div>
+                        <div class="bbcf-recipe-copy">
+                            <span class="bbcf-eyebrow">Текущий рецепт</span>
+                            <strong id="bbcf-forge-recipe-title">${escapeHtml(activeDraftPromptPreset?.label || getStylePresetById(savedDraft.stylePreset, settings)?.label || 'Текущие настройки')}</strong>
+                            <small id="bbcf-forge-recipe-meta"></small>
+                        </div>
+                        <span class="bbcf-status-chip is-ready"><i class="fa-solid fa-check"></i><span>Готово</span></span>
+                    </section>
+                    <details class="bbcf-workflow-card bbcf-workflow-page">
+                        <summary>
+                            <span class="bbcf-workflow-number">1</span>
+                            <span class="bbcf-workflow-heading"><strong>Страница</strong><small id="bbcf-forge-page-summary"></small></span>
+                        </summary>
+                        <div class="bbcf-workflow-body">
                     <div class="bbcf-grid-2">
                         <div class="bbcf-field">
                             <label for="bbcf-draft-mode">Режим генерации</label>
@@ -3583,17 +3901,40 @@ function openForgeModal(options = {}) {
                             </div>
                         </div>
                     </details>
-                    <div class="bbcf-field">
+                        </div>
+                    </details>
+                    <details class="bbcf-workflow-card bbcf-workflow-scene" open>
+                        <summary>
+                            <span class="bbcf-workflow-number">2</span>
+                            <span class="bbcf-workflow-heading"><strong>Сцена</strong><small>Опиши вручную или собери из текущего чата</small></span>
+                        </summary>
+                        <div class="bbcf-workflow-body">
+                    <div class="bbcf-field bbcf-scene-field">
                         <label for="bbcf-draft-scene">Что происходит на странице</label>
                         <textarea id="bbcf-draft-scene" class="text_pole" rows="5" placeholder="Что должно произойти на странице. Можно писать по-русски.">${escapeHtml(savedDraft.scene)}</textarea>
                     </div>
-                    <details class="bbcf-advanced">
-                        <summary><i class="fa-solid fa-sliders"></i><span>Тонкая настройка панелей</span></summary>
-                        <div class="bbcf-advanced-body">
+                            <button class="menu_button bbcf-ai-draft-action" type="button" id="bbcf-ai-draft"><i class="fa-solid fa-scroll"></i><span>Черновик из чата</span></button>
+                        </div>
+                    </details>
+                    <div class="bbcf-workflow-stack">
+                    <details class="bbcf-workflow-card">
+                        <summary>
+                            <span class="bbcf-workflow-number">3</span>
+                            <span class="bbcf-workflow-heading"><strong>Персонажи</strong><small id="bbcf-forge-character-summary"></small></span>
+                        </summary>
+                        <div class="bbcf-workflow-body">
                     <div class="bbcf-field">
                         <label for="bbcf-draft-lock">Описание персонажей</label>
                         <textarea id="bbcf-draft-lock" class="text_pole" rows="4">${escapeHtml(savedDraft.characterLock)}</textarea>
                     </div>
+                        </div>
+                    </details>
+                    <details class="bbcf-workflow-card" open>
+                        <summary>
+                            <span class="bbcf-workflow-number">4</span>
+                            <span class="bbcf-workflow-heading"><strong>Панели и текст</strong><small id="bbcf-forge-panel-summary"></small></span>
+                        </summary>
+                        <div class="bbcf-workflow-body">
                     <div class="bbcf-field">
                         <label for="bbcf-draft-notes">План панелей, по одной строке</label>
                         <textarea id="bbcf-draft-notes" class="text_pole" rows="5" placeholder="1. Общий план коридора&#10;2. Крупный план лица&#10;3. Комедийный insert">${escapeHtml(savedDraft.panelNotes)}</textarea>
@@ -3610,6 +3951,14 @@ function openForgeModal(options = {}) {
                         <label for="bbcf-draft-sfx">SFX: panel | text</label>
                         <textarea id="bbcf-draft-sfx" class="text_pole" rows="2" placeholder="3|БАХ">${escapeHtml(savedDraft.sfx)}</textarea>
                     </div>
+                        </div>
+                    </details>
+                    <details class="bbcf-workflow-card">
+                        <summary>
+                            <span class="bbcf-workflow-number"><i class="fa-solid fa-sliders"></i></span>
+                            <span class="bbcf-workflow-heading"><strong>Тонкая настройка</strong><small id="bbcf-forge-tuning-summary"></small></span>
+                        </summary>
+                        <div class="bbcf-workflow-body">
                     <div class="bbcf-compact-tools">
                         <div class="bbcf-field">
                             <label for="bbcf-forge-draft-prompt-preset">Набор черновика</label>
@@ -3636,12 +3985,13 @@ function openForgeModal(options = {}) {
                     </div>
                         </div>
                     </details>
-                    <div class="bbcf-toolbar">
-                        <button class="menu_button" type="button" id="bbcf-ai-draft"><i class="fa-solid fa-scroll"></i><span>Черновик из чата</span></button>
+                    </div>
+                    <div class="bbcf-toolbar bbcf-generate-toolbar">
+                        <span class="bbcf-generate-ready"><i class="fa-solid fa-circle-check"></i><span>Черновик сохраняется автоматически</span></span>
                         <button class="menu_button bbcf-primary" type="submit"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Сгенерировать страницу</span></button>
                     </div>
                 </form>
-                <div class="bbcf-preview">
+                <div class="bbcf-preview" id="bbcf-preview-panel">
                     <div class="bbcf-preview-actions">
                         <button class="menu_button bbcf-primary bbcf-hidden" type="button" id="bbcf-send-to-chat" title="Отправить текущий комикс в чат"><i class="fa-solid fa-paper-plane"></i><span>Отправить в чат</span></button>
                         <button class="menu_button" type="button" id="bbcf-save-page-image" title="Сохранить весь оформленный комикс одним PNG"><i class="fa-solid fa-file-image"></i><span>Сохранить PNG</span></button>
@@ -3673,8 +4023,10 @@ function openForgeModal(options = {}) {
     `;
     document.body.appendChild(root);
     state.modal = root;
+    bindAnimatedDetails(root);
     root.querySelectorAll('[data-bbcf-close]').forEach(node => node.addEventListener('click', closeForgeModal));
     root.querySelector('#bbcf-modal-minimize')?.addEventListener('click', minimizeForgeModal);
+    root.querySelectorAll('[data-bbcf-mobile-view]').forEach(button => button.addEventListener('click', () => setForgeMobileView(root, button.dataset.bbcfMobileView)));
     bindDraftPersistence(root);
     bindComicUtilityActions(root);
     bindFinalPromptPreview(root);
@@ -3690,6 +4042,7 @@ function openForgeModal(options = {}) {
     updateSendToChatButton(root);
     root.querySelector('#bbcf-ai-draft')?.addEventListener('click', async () => {
         await fillDraftFromAi(root);
+        refreshForgeWorkflowSummary(root);
     });
     root.querySelector('#bbcf-draft-save-style')?.addEventListener('click', () => saveStyleFromDraft(root));
     root.querySelector('#bbcf-draft-save-layout')?.addEventListener('click', () => saveLayoutFromDraft(root));
@@ -3701,7 +4054,11 @@ function openForgeModal(options = {}) {
         event.preventDefault();
         await handleGenerateFromModal(root);
     });
+    root.querySelector('#bbcf-draft-form')?.addEventListener('input', () => refreshForgeWorkflowSummary(root));
+    root.querySelector('#bbcf-draft-form')?.addEventListener('change', () => refreshForgeWorkflowSummary(root));
     syncDraftPromptPresetUi();
+    refreshForgeWorkflowSummary(root);
+    setForgeMobileView(root, 'editor');
     if (startMinimized) {
         root.classList.add('bbcf-minimized');
         state.modalMinimized = true;
@@ -3794,6 +4151,7 @@ async function handleGenerateFromModal(root) {
         updateSendToChatButton(root);
         updateFloatingButton();
         toastr.success('Комикс готов. Проверь превью и отправь его в чат.', 'Comic Forge');
+        setForgeMobileView(root, 'preview');
     } catch (error) {
         if (isAbortError(error) || state.generationCancelRequested) {
             console.info('[BB Comic Forge] generation cancelled');
@@ -3942,6 +4300,7 @@ function applySavedDraftToModal(root, draft) {
     setValueSilent(root, '#bbcf-draft-sfx', draft.sfx || '');
     setValueSilent(root, '#bbcf-draft-custom-style', draft.customPrompt || '');
     setValueSilent(root, '#bbcf-draft-negative', draft.negativePrompt ?? getSettings().negativePrompt);
+    refreshForgeWorkflowSummary(root);
 }
 
 function saveDraftToSettings(draft, { manualField = '', manualFields = [], replaceManualFields = null } = {}) {
@@ -4017,6 +4376,7 @@ async function fillDraftFromAi(root, { throwErrors = false, signal = null } = {}
         const draft = extractJsonObject(raw);
         applyAiDraft(root, draft);
         saveDraftFromModal(root);
+        refreshForgeWorkflowSummary(root);
         toastr.success('Черновик комикса собран.', 'Comic Forge');
     } catch (error) {
         if (isAbortError(error)) {
