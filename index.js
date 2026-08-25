@@ -32,8 +32,17 @@ import {
     VALID_ASPECT_RATIOS,
     VALID_IMAGE_SIZES,
 } from './src/core/constants.js';
+import { makeId } from './src/core/id.js';
 import { ASPECT_PATTERNS, BUBBLE_POSITIONS, DEFAULT_PANEL_BEATS, STYLE_PRESETS } from './src/presets/builtins.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_NEGATIVE_PROMPT, DEFAULT_SETTINGS, DRAFT_CAST_DIALOGUE_RULES } from './src/settings/defaults.js';
+import {
+    findProfileSeed,
+    hasOwn,
+    normalizeAspectPattern,
+    normalizeSavedDraft,
+    normalizeSavedLayouts,
+    normalizeSavedStyles,
+} from './src/settings/normalizers.js';
 import { isDisclosureExpanded, setDisclosureExpanded, upgradeDisclosures } from './src/ui/disclosure.js';
 import {
     REFERENCE_SLOTS,
@@ -43,6 +52,14 @@ import {
     WARDROBE_SLOTS,
     WARDROBE_TARGETS,
 } from './src/wardrobe/config.js';
+import {
+    hasAnyWardrobeAssignment,
+    hasReferenceProfileData,
+    normalizeReferences,
+    normalizeWardrobeAssignment,
+    normalizeWardrobeAssignments,
+    normalizeWardrobeItems,
+} from './src/wardrobe/normalizers.js';
 
 const state = {
     modal: null,
@@ -475,82 +492,6 @@ function migrateDraftPrompt(value) {
     return prompt;
 }
 
-function normalizeReferences(rawReferences) {
-    const byId = new Map(Array.isArray(rawReferences) ? rawReferences.map(ref => [ref?.id, ref]) : []);
-    return REFERENCE_SLOTS.map(slot => {
-        const ref = byId.get(slot.id) || {};
-        return {
-            id: slot.id,
-            label: slot.label,
-            enabled: ref.enabled !== false,
-            name: String(ref.name || '').trim(),
-            description: String(ref.description || '').trim(),
-            path: String(ref.path || '').trim(),
-        };
-    });
-}
-
-function hasReferenceProfileData(rawReferences) {
-    return normalizeReferences(rawReferences).some(ref =>
-        ref.enabled === false
-        || ref.path
-        || ref.name
-        || ref.description);
-}
-
-function findProfileSeed(profiles, fallbackKeys, hasData) {
-    if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return null;
-    for (const key of fallbackKeys) {
-        if (!key || !hasOwn(profiles, key)) continue;
-        const value = profiles[key];
-        if (hasData(value)) return { key, value };
-    }
-    return null;
-}
-
-function hasOwn(object, key) {
-    return Object.prototype.hasOwnProperty.call(object || {}, key);
-}
-
-function normalizeSavedStyles(rawStyles) {
-    const styles = Array.isArray(rawStyles) ? rawStyles : [];
-    return styles
-        .filter(style => style && typeof style === 'object')
-        .map(style => ({
-            id: String(style.id || makeId('style')),
-            label: String(style.label || style.name || 'Мой стиль').trim(),
-            prompt: getSavedStylePrompt(style),
-        }))
-        .filter(style => style.id && (style.label || style.prompt));
-}
-
-function getSavedStylePrompt(style) {
-    return String(
-        style?.prompt
-        ?? style?.customPrompt
-        ?? style?.customStyle
-        ?? style?.description
-        ?? style?.text
-        ?? style?.value
-        ?? ''
-    ).trim();
-}
-
-function normalizeSavedLayouts(rawLayouts) {
-    const layouts = Array.isArray(rawLayouts) ? rawLayouts : [];
-    return layouts
-        .filter(layout => layout && typeof layout === 'object')
-        .map(layout => ({
-            id: String(layout.id || makeId('layout')),
-            label: String(layout.label || layout.name || 'Мой макет').trim(),
-            pattern: normalizeAspectPattern(layout.pattern || layout.aspectPattern),
-            intent: String(layout.intent || '').trim(),
-            singleAspect: VALID_ASPECT_RATIOS.includes(layout.singleAspect) ? layout.singleAspect : '3:4',
-        }))
-        .filter(layout => layout.pattern.length)
-        .slice(0, 40);
-}
-
 function normalizeDraftConnectionProfiles(rawProfiles) {
     const profiles = Array.isArray(rawProfiles) ? rawProfiles : [];
     return profiles
@@ -654,60 +595,6 @@ function normalizeDraftPromptPresets(rawPresets) {
         }))
         .filter(preset => preset.id && preset.label)
         .slice(0, 40);
-}
-
-function normalizeAspectPattern(value) {
-    const raw = Array.isArray(value) ? value : String(value || '').split(/[\s,;|]+/);
-    const pattern = raw.map(item => String(item || '').trim()).filter(item => VALID_ASPECT_RATIOS.includes(item));
-    return pattern.length ? pattern.slice(0, MAX_PANELS) : ['2:3', '1:1', '16:9', '3:4'];
-}
-
-function normalizeSavedDraft(rawDraft) {
-    return rawDraft && typeof rawDraft === 'object' && !Array.isArray(rawDraft)
-        ? structuredClone(rawDraft)
-        : null;
-}
-
-function normalizeWardrobeItems(rawItems) {
-    const items = Array.isArray(rawItems) ? rawItems : [];
-    return items
-        .filter(item => item && typeof item === 'object')
-        .map(item => ({
-            id: String(item.id || makeId('wardrobe-item')),
-            name: String(item.name || 'Новый образ').trim(),
-            description: String(item.description || '').trim(),
-            path: String(item.path || item.imagePath || '').trim(),
-            category: WARDROBE_CATEGORIES[item.category] ? item.category : 'full',
-            target: WARDROBE_TARGETS[item.target] ? item.target : 'all',
-            tags: Array.isArray(item.tags) ? item.tags.map(tag => String(tag).trim()).filter(Boolean).slice(0, 8) : [],
-            favorite: Boolean(item.favorite),
-            createdAt: Number(item.createdAt || Date.now()),
-        }));
-}
-
-function normalizeWardrobeAssignments(rawAssignments) {
-    const normalized = {};
-    for (const owner of REFERENCE_SLOTS) {
-        normalized[owner.id] = normalizeWardrobeAssignment(rawAssignments?.[owner.id]);
-    }
-    return normalized;
-}
-
-function normalizeWardrobeAssignment(rawAssignment = {}) {
-    return {
-        mode: rawAssignment.mode === 'parts' ? 'parts' : 'full',
-        full: String(rawAssignment.full || ''),
-        top: String(rawAssignment.top || ''),
-        bottom: String(rawAssignment.bottom || ''),
-        shoes: String(rawAssignment.shoes || ''),
-        accessories: String(rawAssignment.accessories || ''),
-        hair: String(rawAssignment.hair || ''),
-    };
-}
-
-function hasAnyWardrobeAssignment(assignments) {
-    return Object.values(assignments || {}).some(assignment =>
-        WARDROBE_CATEGORY_ORDER.some(category => String(assignment?.[category] || '').trim()));
 }
 
 function persistWardrobeAssignments(settings) {
@@ -7356,11 +7243,6 @@ function getScopedProfileKey() {
 function safeProfilePart(value) {
     const text = String(value || 'global').trim().toLowerCase();
     return encodeURIComponent(text).replace(/%/g, '').slice(0, 120) || 'global';
-}
-
-function makeId(prefix) {
-    const random = (crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/[^a-zA-Z0-9_-]/g, '');
-    return `${prefix}-${Date.now().toString(36)}-${random.slice(0, 8)}`;
 }
 
 function encodeJsonAttr(value) {
