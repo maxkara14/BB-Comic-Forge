@@ -74,7 +74,6 @@ import {
     REFERENCE_SLOTS,
     WARDROBE_CATEGORIES,
     WARDROBE_CATEGORY_ORDER,
-    WARDROBE_MODE_CATEGORIES,
     WARDROBE_SLOTS,
     WARDROBE_TARGETS,
 } from './src/wardrobe/config.js';
@@ -83,6 +82,16 @@ import {
     normalizeWardrobeAssignment,
     normalizeWardrobeItems,
 } from './src/wardrobe/normalizers.js';
+import {
+    findWardrobeItem,
+    getAllowedWardrobeCategories,
+    getFilteredWardrobeItems,
+    getTargetForOwner,
+    getWardrobeActiveEntries,
+    getWardrobeCategoryIcon,
+    getWardrobeTagsForOwner,
+} from './src/wardrobe/selectors.js';
+import { buildReferenceSettingsHtml, buildWardrobeSummaryHtml } from './src/wardrobe/view.js';
 
 const state = {
     modal: null,
@@ -896,50 +905,6 @@ function setSettingsControlValue(root, selector, value) {
     input.value = String(value ?? '');
 }
 
-function buildReferenceSettingsHtml(settings) {
-    return settings.references.map(ref => `
-        <div class="bbcf-ref-card" data-bbcf-ref="${escapeHtml(ref.id)}" tabindex="0">
-            <div class="bbcf-ref-thumb ${ref.path ? 'has-image' : ''}">
-                ${ref.path ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}" data-bbcf-ref-image>` : '<i class="fa-solid fa-user"></i>'}
-            </div>
-            <div class="bbcf-ref-main">
-                <label class="checkbox_label">
-                    <input type="checkbox" class="bbcf-ref-enabled" ${ref.enabled ? 'checked' : ''}>
-                    <span>${escapeHtml(ref.label)}</span>
-                </label>
-                <input class="text_pole bbcf-ref-name" type="text" value="${escapeHtml(ref.name)}" placeholder="Имя для промпта">
-                <textarea class="text_pole bbcf-ref-description" rows="2" placeholder="Краткое описание внешности, если рефы недоступны">${escapeHtml(ref.description)}</textarea>
-                <div class="bbcf-ref-actions">
-                    <button class="menu_button bbcf-ref-upload" type="button"><i class="fa-solid fa-upload"></i><span>Загрузить</span></button>
-                    <button class="menu_button bbcf-ref-paste" type="button" title="Вставить изображение из буфера"><i class="fa-solid fa-paste"></i><span>Вставить</span></button>
-                    <button class="menu_button bbcf-ref-clear" type="button" ${ref.path ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i></button>
-                    <input class="bbcf-ref-file" type="file" accept="image/*" hidden>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-function buildWardrobeSummaryHtml(settings) {
-    if (!settings.wardrobeItems.length) {
-        return '<div class="bbcf-wardrobe-empty"><i class="fa-solid fa-shirt"></i><span>Гардероб пока пуст</span></div>';
-    }
-    return REFERENCE_SLOTS.map(owner => {
-        const active = getWardrobeActiveItems(settings, owner.id);
-        const preview = active.slice(0, 3).map(item => `
-            <span class="bbcf-wardrobe-mini-thumb" title="${escapeHtml(item.name)}">
-                ${item.path ? `<img src="${escapeHtml(item.path)}" alt="">` : '<i class="fa-solid fa-shirt"></i>'}
-            </span>
-        `).join('');
-        return `
-            <div class="bbcf-wardrobe-owner-mini ${active.length ? 'has-outfit' : ''}">
-                <strong>${escapeHtml(owner.label)}</strong>
-                <div>${preview || '<span class="bbcf-muted">нет образа</span>'}</div>
-            </div>
-        `;
-    }).join('');
-}
-
 function openWardrobeModal() {
     if (state.wardrobeModal?.isConnected) return;
     const root = document.createElement('div');
@@ -983,7 +948,7 @@ function renderWardrobeModal() {
     if (state.wardrobeCategory !== 'all' && !allowedCategories.includes(state.wardrobeCategory)) {
         state.wardrobeCategory = 'all';
     }
-    const visibleItems = getFilteredWardrobeItems(settings, owner.id, state.wardrobeCategory);
+    const visibleItems = getFilteredWardrobeItems(settings, owner.id, state.wardrobeCategory, state.wardrobeTag);
     body.innerHTML = `
         <aside class="bbcf-wardrobe-closet">
             <div class="bbcf-wardrobe-tabs">
@@ -1628,47 +1593,6 @@ function deleteWardrobeItem(id) {
     refreshSettingsUi();
 }
 
-function findWardrobeItem(settings, id) {
-    if (!id) return null;
-    return settings.wardrobeItems.find(item => item.id === id) || null;
-}
-
-function getFilteredWardrobeItems(settings, ownerId, category = 'all') {
-    const ownerTarget = getTargetForOwner(ownerId);
-    return settings.wardrobeItems
-        .filter(item => getAllowedWardrobeCategories(settings.wardrobeAssignments?.[ownerId]?.mode || 'full').includes(item.category))
-        .filter(item => category === 'all' || item.category === category)
-        .filter(item => state.wardrobeTag === 'all' || (item.tags || []).includes(state.wardrobeTag))
-        .filter(item => item.target === 'all' || item.target === ownerTarget)
-        .sort((a, b) => Number(b.favorite) - Number(a.favorite) || (b.createdAt || 0) - (a.createdAt || 0));
-}
-
-function getWardrobeTagsForOwner(settings, ownerId) {
-    const ownerTarget = getTargetForOwner(ownerId);
-    const allowed = getAllowedWardrobeCategories(settings.wardrobeAssignments?.[ownerId]?.mode || 'full');
-    const tags = new Set();
-    for (const item of settings.wardrobeItems) {
-        if (!allowed.includes(item.category)) continue;
-        if (item.target !== 'all' && item.target !== ownerTarget) continue;
-        for (const tag of item.tags || []) tags.add(tag);
-    }
-    return Array.from(tags).sort((a, b) => a.localeCompare(b));
-}
-
-function getAllowedWardrobeCategories(mode) {
-    return WARDROBE_MODE_CATEGORIES[mode === 'parts' ? 'parts' : 'full'];
-}
-
-function getWardrobeCategoryIcon(category) {
-    if (category === 'full') return 'fa-user';
-    if (category === 'top') return 'fa-shirt';
-    if (category === 'bottom') return 'fa-table-cells-large';
-    if (category === 'shoes') return 'fa-shoe-prints';
-    if (category === 'accessories') return 'fa-gem';
-    if (category === 'hair') return 'fa-scissors';
-    return 'fa-shirt';
-}
-
 async function describeWardrobeEditor(form) {
     const button = form.querySelector('#bbcf-wardrobe-editor-describe');
     const textarea = form.querySelector('#bbcf-wardrobe-editor-description');
@@ -1767,32 +1691,6 @@ function cleanWardrobeDescription(value) {
         .trim();
     if (!text) throw new Error('API не вернул описание.');
     return text.slice(0, 700);
-}
-
-function getTargetForOwner(ownerId) {
-    if (ownerId === 'char') return 'char';
-    if (ownerId === 'user') return 'user';
-    return 'npc';
-}
-
-function getWardrobeActiveItems(settings, ownerId) {
-    const assignment = settings.wardrobeAssignments?.[ownerId] || normalizeWardrobeAssignment();
-    const categories = assignment.mode === 'parts'
-        ? ['top', 'bottom', 'shoes', 'accessories', 'hair']
-        : ['full', 'accessories', 'hair'];
-    return categories
-        .map(category => findWardrobeItem(settings, assignment[category]))
-        .filter(Boolean);
-}
-
-function getWardrobeActiveEntries(settings = getSettings()) {
-    const entries = [];
-    for (const owner of REFERENCE_SLOTS) {
-        for (const item of getWardrobeActiveItems(settings, owner.id)) {
-            entries.push({ owner, item });
-        }
-    }
-    return entries;
 }
 
 function refreshSettingsUi() {
