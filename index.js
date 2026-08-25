@@ -10,41 +10,29 @@ import {
 import { extension_settings } from '../../../extensions.js';
 import { POPUP_TYPE, Popup } from '../../../popup.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
+import {
+    COMIC_PAGE_SELECTOR,
+    DRAFT_CONNECTION_MODES,
+    DRAFT_SYNC_FIELDS,
+    DRAFT_SYNC_SELECTORS,
+    FAB_ID,
+    FAB_WRAPPER_ID,
+    IMAGE_API_TYPES,
+    MAX_COMIC_HISTORY,
+    MAX_CONCURRENCY,
+    MAX_PANELS,
+    MAX_PREVIOUS_CONTEXT_IMAGES,
+    MODAL_ID,
+    MODULE_NAME,
+    ONLYSQ_IMAGEN_ENDPOINT,
+    OPENAI_IMAGE_QUALITIES,
+    OPENAI_IMAGE_SIZES,
+    SETTINGS_ID,
+    UPLOAD_ALLOWED_FORMATS,
+    VALID_ASPECT_RATIOS,
+    VALID_IMAGE_SIZES,
+} from './src/core/constants.js';
 import { isDisclosureExpanded, setDisclosureExpanded, upgradeDisclosures } from './src/ui/disclosure.js';
-
-const MODULE_NAME = 'BB-Comic-Forge';
-const SETTINGS_ID = 'bbcf-settings';
-const FAB_ID = 'bbcf-open-fab';
-const FAB_WRAPPER_ID = 'bbcf-open-wrapper';
-const MODAL_ID = 'bbcf-modal-root';
-const MAX_PANELS = 6;
-const UPLOAD_ALLOWED_FORMATS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif']);
-const VALID_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
-const VALID_IMAGE_SIZES = ['1K', '2K', '4K'];
-const ONLYSQ_IMAGEN_ENDPOINT = 'https://api.onlysq.ru/ai/imagen';
-const MAX_COMIC_HISTORY = 24;
-const MAX_PREVIOUS_CONTEXT_IMAGES = 3;
-const MAX_CONCURRENCY = 6;
-const DRAFT_CONNECTION_MODES = ['sillytavern', 'openai-chat', 'gemini'];
-const IMAGE_API_TYPES = ['onlysq-imagen', 'openai-images', 'openai-chat', 'gemini', 'naistera'];
-const OPENAI_IMAGE_SIZES = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
-const OPENAI_IMAGE_QUALITIES = ['standard', 'hd', 'high', 'medium', 'low'];
-const COMIC_PAGE_SELECTOR = '.bbcf-comic-page, .custom-bbcf-comic-page, [data-bbcf-page]';
-const DRAFT_SYNC_FIELDS = ['generationMode', 'insertMode', 'panelCount', 'layout', 'stylePreset', 'characterLock', 'panelNotes', 'bubbles', 'inserts', 'sfx', 'customPrompt', 'negativePrompt'];
-const DRAFT_SYNC_SELECTORS = {
-    generationMode: '#bbcf-draft-mode',
-    insertMode: '#bbcf-draft-insert-mode',
-    panelCount: '#bbcf-draft-count',
-    layout: '#bbcf-draft-layout',
-    stylePreset: '#bbcf-draft-style',
-    characterLock: '#bbcf-draft-lock',
-    panelNotes: '#bbcf-draft-notes',
-    bubbles: '#bbcf-draft-bubbles',
-    inserts: '#bbcf-draft-inserts',
-    sfx: '#bbcf-draft-sfx',
-    customPrompt: '#bbcf-draft-custom-style',
-    negativePrompt: '#bbcf-draft-negative',
-};
 
 const STYLE_PRESETS = {
     manhwa: {
