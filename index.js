@@ -38,6 +38,12 @@ import { uniqueStrings } from './src/core/strings.js';
 import { migrateDraftPrompt, normalizeDraftPromptPresets } from './src/draft/prompts.js';
 import { ASPECT_PATTERNS, BUBBLE_POSITIONS, DEFAULT_PANEL_BEATS, STYLE_PRESETS } from './src/presets/builtins.js';
 import {
+    getBuiltinLayoutId,
+    getBuiltinSinglePageAspectRatio,
+    getLayoutPresetById as resolveLayoutPresetById,
+    getStylePresetById as resolveStylePresetById,
+} from './src/presets/resolvers.js';
+import {
     extractModelNames,
     filterDraftModelNames,
     filterModelNamesForProvider,
@@ -57,6 +63,7 @@ import {
     normalizeSavedLayouts,
     normalizeSavedStyles,
 } from './src/settings/normalizers.js';
+import { buildScopedProfileFallbackKeys, buildScopedProfileKey } from './src/settings/scope.js';
 import { isDisclosureExpanded, setDisclosureExpanded, upgradeDisclosures } from './src/ui/disclosure.js';
 import {
     REFERENCE_SLOTS,
@@ -66,6 +73,7 @@ import {
     WARDROBE_SLOTS,
     WARDROBE_TARGETS,
 } from './src/wardrobe/config.js';
+import { migrateLegacyWardrobe } from './src/wardrobe/migrations.js';
 import {
     hasAnyWardrobeAssignment,
     hasReferenceProfileData,
@@ -470,33 +478,6 @@ function persistCharacterLockProfile(settings) {
     if (value) settings.characterLockProfiles[profileKey] = value;
     else delete settings.characterLockProfiles[profileKey];
     settings.activeCharacterLockProfileKey = profileKey;
-}
-
-function migrateLegacyWardrobe(settings) {
-    const migrated = [];
-    for (const slot of settings.wardrobe || []) {
-        if (!slot?.path && !slot?.description && !slot?.name) continue;
-        const id = makeId(`wardrobe-${slot.id || 'item'}`);
-        migrated.push({
-            id,
-            name: String(slot.name || slot.label || 'Образ').trim(),
-            description: String(slot.description || '').trim(),
-            path: String(slot.path || '').trim(),
-            category: 'full',
-            target: slot.id === 'char' || slot.id === 'user' ? slot.id : slot.id?.startsWith('npc') ? 'npc' : 'all',
-            tags: [],
-            favorite: false,
-            createdAt: Date.now(),
-        });
-        if (slot.enabled && settings.wardrobeAssignments?.[slot.id] !== undefined) {
-            settings.wardrobeAssignments[slot.id] = normalizeWardrobeAssignment({ mode: 'full', full: id });
-        } else if (slot.enabled && REFERENCE_SLOTS.some(owner => owner.id === slot.id)) {
-            settings.wardrobeAssignments[slot.id] = normalizeWardrobeAssignment({ mode: 'full', full: id });
-        }
-    }
-    if (migrated.length) {
-        settings.wardrobeItems = [...(Array.isArray(settings.wardrobeItems) ? settings.wardrobeItems : []), ...migrated];
-    }
 }
 
 function saveSettings() {
@@ -2484,33 +2465,11 @@ function option(value, selected, label = value) {
 }
 
 function getStylePresetById(styleId, settings = getSettings()) {
-    const id = String(styleId || '').trim();
-    if (Object.hasOwn(STYLE_PRESETS, id)) return { id, ...STYLE_PRESETS[id], builtin: true };
-    const savedId = id.startsWith('saved:') ? id.slice(6) : id;
-    const saved = settings.savedStyles?.find(style => style.id === savedId);
-    return saved ? { ...saved, id: `saved:${saved.id}`, builtin: false } : null;
+    return resolveStylePresetById(styleId, settings);
 }
 
 function getLayoutPresetById(layoutId, settings = getSettings()) {
-    const id = String(layoutId || '').trim();
-    if (Object.hasOwn(ASPECT_PATTERNS, id)) {
-        return {
-            id,
-            label: id,
-            pattern: ASPECT_PATTERNS[id],
-            intent: '',
-            singleAspect: getBuiltinSinglePageAspectRatio(id),
-            builtin: true,
-        };
-    }
-    const savedId = id.startsWith('saved:') ? id.slice(6) : id;
-    const saved = settings.savedLayouts?.find(layout => layout.id === savedId);
-    return saved ? { ...saved, id: `saved:${saved.id}`, builtin: false } : null;
-}
-
-function getBuiltinLayoutId(layoutId) {
-    const id = String(layoutId || '').trim();
-    return Object.hasOwn(ASPECT_PATTERNS, id) ? id : null;
+    return resolveLayoutPresetById(layoutId, settings);
 }
 
 function buildModelOptionsHtml(settings) {
@@ -4340,14 +4299,6 @@ function getSinglePageAspectRatio(layout) {
     const preset = getLayoutPresetById(layout);
     if (preset?.singleAspect) return preset.singleAspect;
     return getBuiltinSinglePageAspectRatio(layout);
-}
-
-function getBuiltinSinglePageAspectRatio(layout) {
-    if (layout === 'cinematic') return '16:9';
-    if (layout === 'grid') return '1:1';
-    if (layout === 'manga') return '3:4';
-    if (layout === 'dramatic') return '3:4';
-    return '9:16';
 }
 
 function buildStylePrompt(stylePreset, customPrompt) {
@@ -6960,58 +6911,11 @@ function getSavedDraftProfileKey() {
 }
 
 function getScopedProfileFallbackKeys() {
-    const context = SillyTavern.getContext();
-    const keys = [];
-    const groupId = context.groupId ?? context.group_id ?? context.selected_group;
-    const group = groupId !== undefined && groupId !== null && groupId !== ''
-        ? (Array.isArray(context.groups) ? context.groups.find(item => String(item?.id) === String(groupId)) : null)
-        : null;
-    const character = context.characterId !== undefined ? context.characters?.[context.characterId] : null;
-    if (groupId !== undefined && groupId !== null && groupId !== '') {
-        keys.push(`group:${safeProfilePart(groupId)}:${safeProfilePart(group?.name || context.name2 || 'group')}`);
-    }
-    if (character) {
-        const stableId = character.avatar || character.name || context.characterId;
-        keys.push(`character:${safeProfilePart(stableId)}:${safeProfilePart(character.name || context.name2 || 'character')}`);
-    }
-    keys.push(`chat:${safeProfilePart(context.name2 || 'global')}`);
-    keys.push('legacy:unscoped');
-    return [...new Set(keys)];
+    return buildScopedProfileFallbackKeys(SillyTavern.getContext());
 }
 
 function getScopedProfileKey() {
-    const context = SillyTavern.getContext();
-    const groupId = context.groupId ?? context.group_id ?? context.selected_group;
-    const group = groupId !== undefined && groupId !== null && groupId !== ''
-        ? (Array.isArray(context.groups) ? context.groups.find(item => String(item?.id) === String(groupId)) : null)
-        : null;
-    const character = context.characterId !== undefined ? context.characters?.[context.characterId] : null;
-    const chatId = context.chatId
-        || context.chat_id
-        || context.chatMetadata?.chat_id
-        || context.chatMetadata?.file_name
-        || context.chatMetadata?.chat_name
-        || context.chatMetadata?.name;
-    if (chatId !== undefined && chatId !== null && chatId !== '') {
-        const ownerId = groupId !== undefined && groupId !== null && groupId !== ''
-            ? `group:${groupId}`
-            : `character:${character?.avatar || character?.name || context.characterId || context.name2 || 'global'}`;
-        const ownerName = group?.name || character?.name || context.name2 || 'chat';
-        return `chat:${safeProfilePart(ownerId)}:${safeProfilePart(ownerName)}:${safeProfilePart(chatId)}`;
-    }
-    if (groupId !== undefined && groupId !== null && groupId !== '') {
-        return `group:${safeProfilePart(groupId)}:${safeProfilePart(group?.name || context.name2 || 'group')}`;
-    }
-    if (character) {
-        const stableId = character.avatar || character.name || context.characterId;
-        return `character:${safeProfilePart(stableId)}:${safeProfilePart(character.name || context.name2 || 'character')}`;
-    }
-    return `chat:global:${safeProfilePart(context.name2 || 'global')}`;
-}
-
-function safeProfilePart(value) {
-    const text = String(value || 'global').trim().toLowerCase();
-    return encodeURIComponent(text).replace(/%/g, '').slice(0, 120) || 'global';
+    return buildScopedProfileKey(SillyTavern.getContext());
 }
 
 function encodeJsonAttr(value) {
