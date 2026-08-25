@@ -30,13 +30,16 @@ import {
 import { makeId } from './src/core/id.js';
 import { clampInt } from './src/core/numbers.js';
 import { uniqueStrings } from './src/core/strings.js';
+import { buildDraftPromptPresetOptionsHtml, getActiveDraftPromptPreset } from './src/draft/view.js';
 import { ASPECT_PATTERNS, BUBBLE_POSITIONS, DEFAULT_PANEL_BEATS, STYLE_PRESETS } from './src/presets/builtins.js';
 import {
+    describeLayoutIntent as resolveLayoutIntent,
     getBuiltinLayoutId,
     getBuiltinSinglePageAspectRatio,
     getLayoutPresetById as resolveLayoutPresetById,
     getStylePresetById as resolveStylePresetById,
 } from './src/presets/resolvers.js';
+import { buildLayoutExamplesHtml, buildLayoutOptionsHtml, buildStyleExamplesHtml, buildStyleOptionsHtml } from './src/presets/view.js';
 import {
     extractModelNames,
     filterDraftModelNames,
@@ -2241,16 +2244,6 @@ function getDraftTavernProfileLabel(profileId) {
     }
 }
 
-function buildDraftPromptPresetOptionsHtml(settings, selected = settings.activeDraftPromptPresetId) {
-    const current = option('', selected, 'Текущий черновик');
-    const saved = settings.draftPromptPresets.map(preset => option(preset.id, selected, preset.label)).join('');
-    return `${current}${saved}`;
-}
-
-function getActiveDraftPromptPreset(settings = getSettings()) {
-    return settings.draftPromptPresets.find(preset => preset.id === settings.activeDraftPromptPresetId) || null;
-}
-
 function getDraftConnectionNote(mode) {
     if (mode === 'sillytavern') {
         const profileId = getSettings().draftTavernProfileId;
@@ -2274,66 +2267,6 @@ function updateModelPicker(root = document.getElementById(SETTINGS_ID)) {
         input.placeholder = getKnownModelsForProvider(settings.apiType)[0] || 'model';
         if (input.value !== settings.model) input.value = settings.model || '';
     }
-}
-
-function buildStyleOptionsHtml(settings, selected) {
-    const base = Object.entries(STYLE_PRESETS).map(([key, preset]) => option(key, selected, preset.label)).join('');
-    const saved = settings.savedStyles.map(style => option(`saved:${style.id}`, selected, `★ ${style.label}`)).join('');
-    return `${base}${saved}`;
-}
-
-function buildLayoutOptionsHtml(settings, selected) {
-    const base = Object.entries({
-        webtoon: 'Webtoon vertical',
-        grid: 'Grid',
-        cinematic: 'Cinematic',
-        manga: 'Manga',
-        dramatic: 'Dramatic',
-    }).map(([key, label]) => option(key, selected, label)).join('');
-    const saved = settings.savedLayouts.map(layout => option(`saved:${layout.id}`, selected, `★ ${layout.label}`)).join('');
-    return `${base}${saved}`;
-}
-
-function buildStyleExamplesHtml(settings) {
-    const builtin = Object.values(STYLE_PRESETS)
-        .filter(preset => preset.prompt)
-        .map(preset => ({ label: preset.label, prompt: preset.prompt, savedId: '' }));
-    const saved = settings.savedStyles.map(style => ({ label: `★ ${style.label}`, prompt: style.prompt, savedId: style.id }));
-    const examples = [...builtin, ...saved];
-    return `<div class="bbcf-preset-example-group"><strong>Стили</strong>${examples.map(item => `
-        <div class="bbcf-preset-example">
-            <div class="bbcf-preset-example-top">
-                <span>${escapeHtml(item.label)}</span>
-                ${item.savedId ? `<button class="menu_button bbcf-icon-button bbcf-danger" type="button" title="Удалить стиль" aria-label="Удалить стиль" data-bbcf-delete-style="${escapeHtml(item.savedId)}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
-            </div>
-            <p>${escapeHtml(item.prompt)}</p>
-        </div>
-    `).join('')}</div>`;
-}
-
-function buildLayoutExamplesHtml(settings) {
-    const saved = settings.savedLayouts.map(layout => ({
-        label: `★ ${layout.label}`,
-        pattern: layout.pattern,
-        intent: layout.intent,
-        savedId: layout.id,
-    }));
-    const builtin = Object.keys(ASPECT_PATTERNS).map(key => ({
-        label: key,
-        pattern: ASPECT_PATTERNS[key],
-        intent: describeLayoutIntent(key, 1, 4),
-        savedId: '',
-    }));
-    return `<div class="bbcf-preset-example-group"><strong>Макеты</strong>${[...builtin, ...saved].map(item => `
-        <div class="bbcf-layout-example">
-            <div class="bbcf-preset-example-top">
-                <span>${escapeHtml(item.label)}</span>
-                ${item.savedId ? `<button class="menu_button bbcf-icon-button bbcf-danger" type="button" title="Удалить макет" aria-label="Удалить макет" data-bbcf-delete-layout="${escapeHtml(item.savedId)}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
-            </div>
-            <div class="bbcf-layout-pattern">${item.pattern.slice(0, 6).map(ratio => `<b>${escapeHtml(ratio)}</b>`).join('')}</div>
-            <p>${escapeHtml(item.intent || '')}</p>
-        </div>
-    `).join('')}</div>`;
 }
 
 function bindPresetDeleteActions(root) {
@@ -3986,14 +3919,7 @@ function normalizePanelNote(line) {
 }
 
 function describeLayoutIntent(layout, number, total) {
-    const preset = getLayoutPresetById(layout);
-    if (preset && !preset.builtin) return preset.intent || 'custom saved comic layout with the saved panel rhythm and clear reading flow';
-    if (layout === 'webtoon') return 'vertical webtoon reading flow with spacious composition and clear emotional rhythm';
-    if (layout === 'grid') return 'balanced comic grid panel with stable framing and readable action';
-    if (layout === 'cinematic') return number === 1 || number === total ? 'wide cinematic anchor shot' : 'supporting cinematic detail shot';
-    if (layout === 'manga') return 'manga page rhythm with varied panel energy, sharp eye flow, and bold insert composition';
-    if (layout === 'dramatic') return 'dramatic broken-border comic feeling, strong silhouette, diagonal energy, and heightened emotion';
-    return 'clean comic panel composition';
+    return resolveLayoutIntent(layout, number, total, getSettings());
 }
 
 function getAspectForPanel(layout, index) {
