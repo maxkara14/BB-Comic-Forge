@@ -33,6 +33,14 @@ import {
     VALID_IMAGE_SIZES,
 } from './src/core/constants.js';
 import { isDisclosureExpanded, setDisclosureExpanded, upgradeDisclosures } from './src/ui/disclosure.js';
+import {
+    REFERENCE_SLOTS,
+    WARDROBE_CATEGORIES,
+    WARDROBE_CATEGORY_ORDER,
+    WARDROBE_MODE_CATEGORIES,
+    WARDROBE_SLOTS,
+    WARDROBE_TARGETS,
+} from './src/wardrobe/config.js';
 
 const STYLE_PRESETS = {
     manhwa: {
@@ -232,39 +240,6 @@ const ASPECT_PATTERNS = {
 };
 
 const BUBBLE_POSITIONS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-const REFERENCE_SLOTS = [
-    { id: 'char', label: '{{char}}' },
-    { id: 'user', label: '{{user}}' },
-    { id: 'npc1', label: 'NPC 1' },
-    { id: 'npc2', label: 'NPC 2' },
-    { id: 'npc3', label: 'NPC 3' },
-    { id: 'npc4', label: 'NPC 4' },
-];
-
-const WARDROBE_SLOTS = REFERENCE_SLOTS.map(slot => ({
-    ...slot,
-    label: `${slot.label} outfit`,
-}));
-
-const WARDROBE_CATEGORIES = {
-    full: 'Комплект',
-    top: 'Верх',
-    bottom: 'Низ',
-    shoes: 'Обувь',
-    accessories: 'Аксессуары',
-    hair: 'Причёска',
-};
-const WARDROBE_CATEGORY_ORDER = Object.keys(WARDROBE_CATEGORIES);
-const WARDROBE_TARGETS = {
-    all: 'Для всех',
-    char: '{{char}}',
-    user: '{{user}}',
-    npc: 'NPC',
-};
-const WARDROBE_MODE_CATEGORIES = {
-    full: ['full', 'accessories', 'hair'],
-    parts: ['top', 'bottom', 'shoes', 'accessories', 'hair'],
-};
 
 const state = {
     modal: null,
