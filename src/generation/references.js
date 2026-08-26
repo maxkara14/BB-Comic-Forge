@@ -143,4 +143,3 @@ export function createReferenceService(dependencies) {
         collectReferenceImages,
     };
 }
-
