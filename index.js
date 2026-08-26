@@ -8,7 +8,7 @@ import {
     updateMessageBlock,
 } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
-import { POPUP_TYPE, Popup } from '../../../popup.js';
+import { POPUP_RESULT, POPUP_TYPE, Popup } from '../../../popup.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
 import {
     DRAFT_SYNC_FIELDS,
@@ -144,6 +144,7 @@ const {
 
 const {
     applyDraftPromptPreset,
+    bindPortablePresetActions,
     bindPresetDeleteActions,
     deleteDraftPromptPreset,
     getLayoutPresetById,
@@ -159,6 +160,9 @@ const {
     describeLayoutIntent,
     getSavedDraftProfileKey,
     getSettings,
+    Popup,
+    POPUP_RESULT,
+    POPUP_TYPE,
     notifySuccess: message => toastr.success(message, 'Comic Forge'),
     notifyWarning: message => toastr.warning(message, 'Comic Forge'),
     persistCharacterLockProfile,
@@ -614,6 +618,7 @@ function bindSettingsUi(root) {
     root.querySelector('#bbcf-draft-prompt-preset')?.addEventListener('change', () => applyDraftPromptPreset(root, { source: 'settings' }));
     root.querySelector('#bbcf-save-draft-prompt-preset')?.addEventListener('click', () => saveDraftPromptPreset(root, { source: 'settings' }));
     root.querySelector('#bbcf-delete-draft-prompt-preset')?.addEventListener('click', () => deleteDraftPromptPreset(root));
+    bindPortablePresetActions(root, { source: 'settings' });
     bindPresetDeleteActions(root);
     bindReferenceSettings(root);
     bindSettingInput(root, '#bbcf-enabled', 'enabled', 'checked', () => updateFloatingButton());
@@ -992,6 +997,7 @@ function openForgeModal(options = {}) {
     root.querySelector('#bbcf-forge-draft-prompt-preset')?.addEventListener('change', () => applyDraftPromptPreset(root, { source: 'forge' }));
     root.querySelector('#bbcf-forge-save-draft-prompt-preset')?.addEventListener('click', () => saveDraftPromptPreset(root, { source: 'forge' }));
     root.querySelector('#bbcf-forge-delete-draft-prompt-preset')?.addEventListener('click', () => deleteDraftPromptPreset(root));
+    bindPortablePresetActions(root, { source: 'forge' });
     bindPresetDeleteActions(root);
     root.querySelector('#bbcf-draft-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();

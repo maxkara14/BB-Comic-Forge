@@ -7,12 +7,31 @@ import { getLayoutPresetById as resolveLayoutPresetById, getStylePresetById as r
 import { buildLayoutExamplesHtml, buildLayoutOptionsHtml, buildStyleExamplesHtml, buildStyleOptionsHtml } from './view.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_SETTINGS } from '../settings/defaults.js';
 import { normalizeAspectPattern } from '../settings/normalizers.js';
+import { escapeHtml } from '../ui/html.js';
+import {
+    createPortablePreset,
+    getPortablePresetFilename,
+    normalizePortablePreset,
+} from './portable.js';
+
+const PORTABLE_DRAFT_FIELDS = [
+    'generationMode',
+    'insertMode',
+    'panelCount',
+    'layout',
+    'stylePreset',
+    'customPrompt',
+    'negativePrompt',
+];
 
 export function createPresetSettingsController(dependencies) {
     const {
         describeLayoutIntent,
         getSavedDraftProfileKey,
         getSettings,
+        Popup,
+        POPUP_RESULT,
+        POPUP_TYPE,
         notifySuccess,
         notifyWarning,
         persistCharacterLockProfile,
@@ -49,7 +68,7 @@ export function createPresetSettingsController(dependencies) {
         refreshForgeWorkflowSummary(modalRoot);
     }
 
-    function applyDraftPromptPreset(root, { source = 'settings' } = {}) {
+    function applyDraftPromptPreset(root, { source = 'settings', notify = true } = {}) {
         const settings = getSettings();
         const selectSelector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset';
         const selectedId = String(root?.querySelector(selectSelector)?.value || '');
@@ -63,6 +82,7 @@ export function createPresetSettingsController(dependencies) {
         }
         settings.activeDraftPromptPresetId = preset.id;
         settings.draftPrompt = preset.draftPrompt;
+        const portableOnly = preset.kind === 'comic';
         setSettingsControlValue(document.getElementById(SETTINGS_ID), '#bbcf-draft-prompt', settings.draftPrompt);
         if (source === 'forge') {
             setValueSilent(root, '#bbcf-draft-mode', preset.generationMode);
@@ -71,29 +91,33 @@ export function createPresetSettingsController(dependencies) {
             syncPresetUi({ styleValue: preset.stylePreset, layoutValue: preset.layout });
             setValueSilent(root, '#bbcf-draft-layout', preset.layout);
             setValueSilent(root, '#bbcf-draft-style', preset.stylePreset);
-            setValueSilent(root, '#bbcf-draft-lock', preset.characterLock);
-            setValueSilent(root, '#bbcf-draft-notes', preset.panelNotes);
-            setValueSilent(root, '#bbcf-draft-bubbles', preset.bubbles);
-            setValueSilent(root, '#bbcf-draft-inserts', preset.inserts);
-            setValueSilent(root, '#bbcf-draft-sfx', preset.sfx);
+            if (!portableOnly) {
+                setValueSilent(root, '#bbcf-draft-lock', preset.characterLock);
+                setValueSilent(root, '#bbcf-draft-notes', preset.panelNotes);
+                setValueSilent(root, '#bbcf-draft-bubbles', preset.bubbles);
+                setValueSilent(root, '#bbcf-draft-inserts', preset.inserts);
+                setValueSilent(root, '#bbcf-draft-sfx', preset.sfx);
+            }
             setValueSilent(root, '#bbcf-draft-custom-style', preset.customPrompt);
             setValueSilent(root, '#bbcf-draft-negative', preset.negativePrompt);
             saveSettings();
-            saveDraftFromModal(root, { manualFields: DRAFT_SYNC_FIELDS });
+            saveDraftFromModal(root, { manualFields: portableOnly ? PORTABLE_DRAFT_FIELDS : DRAFT_SYNC_FIELDS });
         } else {
             settings.generationMode = preset.generationMode;
             settings.insertMode = preset.insertMode;
             settings.panelCount = preset.panelCount;
             settings.layout = preset.layout;
             settings.stylePreset = preset.stylePreset;
-            settings.characterLock = preset.characterLock;
-            settings.defaultPanelNotes = preset.panelNotes;
-            settings.defaultBubbles = preset.bubbles;
-            settings.defaultInserts = preset.inserts;
-            settings.defaultSfx = preset.sfx;
+            if (!portableOnly) {
+                settings.characterLock = preset.characterLock;
+                settings.defaultPanelNotes = preset.panelNotes;
+                settings.defaultBubbles = preset.bubbles;
+                settings.defaultInserts = preset.inserts;
+                settings.defaultSfx = preset.sfx;
+                persistCharacterLockProfile(settings);
+            }
             settings.customPrompt = preset.customPrompt;
             settings.negativePrompt = preset.negativePrompt;
-            persistCharacterLockProfile(settings);
             saveSettings();
             setSettingsControlValue(root, '#bbcf-generation-mode', settings.generationMode);
             setSettingsControlValue(root, '#bbcf-insert-mode', settings.insertMode);
@@ -101,18 +125,20 @@ export function createPresetSettingsController(dependencies) {
             syncPresetUi({ styleValue: settings.stylePreset, layoutValue: settings.layout });
             setSettingsControlValue(root, '#bbcf-layout', settings.layout);
             setSettingsControlValue(root, '#bbcf-style-preset', settings.stylePreset);
-            setSettingsControlValue(root, '#bbcf-character-lock', settings.characterLock);
-            setSettingsControlValue(root, '#bbcf-default-panel-notes', settings.defaultPanelNotes);
-            setSettingsControlValue(root, '#bbcf-default-bubbles', settings.defaultBubbles);
-            setSettingsControlValue(root, '#bbcf-default-inserts', settings.defaultInserts);
-            setSettingsControlValue(root, '#bbcf-default-sfx', settings.defaultSfx);
+            if (!portableOnly) {
+                setSettingsControlValue(root, '#bbcf-character-lock', settings.characterLock);
+                setSettingsControlValue(root, '#bbcf-default-panel-notes', settings.defaultPanelNotes);
+                setSettingsControlValue(root, '#bbcf-default-bubbles', settings.defaultBubbles);
+                setSettingsControlValue(root, '#bbcf-default-inserts', settings.defaultInserts);
+                setSettingsControlValue(root, '#bbcf-default-sfx', settings.defaultSfx);
+            }
             setSettingsControlValue(root, '#bbcf-custom-style', settings.customPrompt);
             setSettingsControlValue(root, '#bbcf-negative', settings.negativePrompt);
-            syncDefaultDraftFields(DRAFT_SYNC_FIELDS);
+            syncDefaultDraftFields(portableOnly ? PORTABLE_DRAFT_FIELDS : DRAFT_SYNC_FIELDS);
         }
         syncDraftPromptPresetUi({ forceName: true });
         refreshForgeWorkflowSummary(state.modal);
-        notifySuccess('Набор черновика применён.');
+        if (notify) notifySuccess('Набор черновика применён.');
     }
 
     function saveDraftPromptPreset(root, { source = 'settings' } = {}) {
@@ -120,11 +146,18 @@ export function createPresetSettingsController(dependencies) {
         const nameSelector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset-name' : '#bbcf-draft-prompt-preset-name';
         const selectedId = settings.activeDraftPromptPresetId || String(root?.querySelector(source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset')?.value || '');
         const existingIndex = settings.draftPromptPresets.findIndex(preset => preset.id === selectedId);
+        const existing = existingIndex >= 0 ? settings.draftPromptPresets[existingIndex] : null;
         const label = String(root?.querySelector(nameSelector)?.value || '').trim()
-            || (existingIndex >= 0 ? settings.draftPromptPresets[existingIndex].label : `Набор черновика ${settings.draftPromptPresets.length + 1}`);
+            || (existing ? existing.label : `Набор черновика ${settings.draftPromptPresets.length + 1}`);
         const preset = {
-            id: existingIndex >= 0 ? settings.draftPromptPresets[existingIndex].id : makeId('draft-prompt'),
+            id: existing?.id || makeId('draft-prompt'),
             label,
+            kind: existing?.kind || 'snapshot',
+            description: existing?.description || '',
+            author: existing?.author || '',
+            tags: existing?.tags || [],
+            recommendations: existing?.recommendations || {},
+            importedAt: existing?.importedAt || '',
             draftPrompt: String(settings.draftPrompt || DEFAULT_DRAFT_PROMPT),
             generationMode: source === 'forge' ? valueOf(root, '#bbcf-draft-mode') : settings.generationMode,
             insertMode: source === 'forge' ? valueOf(root, '#bbcf-draft-insert-mode') : settings.insertMode,
@@ -325,8 +358,211 @@ export function createPresetSettingsController(dependencies) {
         notifySuccess('Макет сохранён.');
     }
 
+    function bindPortablePresetActions(root, { source = 'settings' } = {}) {
+        if (!root) return;
+        const prefix = source === 'forge' ? '#bbcf-forge' : '#bbcf';
+        const exportButton = root.querySelector(`${prefix}-export-comic-preset`);
+        const importButton = root.querySelector(`${prefix}-import-comic-preset`);
+        const fileInput = root.querySelector(`${prefix}-import-comic-preset-file`);
+        exportButton?.addEventListener('click', () => {
+            try {
+                exportPortablePreset(root, source);
+            } catch (error) {
+                console.error('[BB Comic Forge] preset export failed', error);
+                notifyWarning(error?.message || String(error));
+            }
+        });
+        importButton?.addEventListener('click', () => fileInput?.click());
+        fileInput?.addEventListener('change', async () => {
+            const file = fileInput.files?.[0];
+            fileInput.value = '';
+            if (!file) return;
+            try {
+                await importPortablePresetFile(file, root, source);
+            } catch (error) {
+                console.error('[BB Comic Forge] preset import failed', error);
+                notifyWarning(error?.message || String(error));
+            }
+        });
+    }
+
+    function exportPortablePreset(root, source) {
+        const preset = collectPortablePreset(root, source);
+        const blob = new Blob([`${JSON.stringify(preset, null, 2)}\n`], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = getPortablePresetFilename(preset);
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+        notifySuccess('Пресет экспортирован.');
+    }
+
+    function collectPortablePreset(root, source) {
+        const settings = getSettings();
+        const forge = source === 'forge';
+        const read = (selector, fallback = '') => String(root?.querySelector(selector)?.value ?? fallback);
+        const styleId = read(forge ? '#bbcf-draft-style' : '#bbcf-style-preset', settings.stylePreset);
+        const layoutId = read(forge ? '#bbcf-draft-layout' : '#bbcf-layout', settings.layout);
+        const style = getStylePresetById(styleId, settings);
+        const layout = getLayoutPresetById(layoutId, settings);
+        if (!style?.prompt) throw new Error('Выбранный стиль не содержит prompt.');
+        if (!layout?.pattern?.length) throw new Error('Выбранный макет не содержит панелей.');
+        const presetSelect = root?.querySelector(forge ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset');
+        const selectedPreset = settings.draftPromptPresets.find(item => item.id === presetSelect?.value)
+            || settings.draftPromptPresets.find(item => item.id === settings.activeDraftPromptPresetId);
+        const typedName = read(forge ? '#bbcf-forge-draft-prompt-preset-name' : '#bbcf-draft-prompt-preset-name').trim();
+        return createPortablePreset({
+            metadata: {
+                name: typedName || selectedPreset?.label || style.label || 'Comic Forge Preset',
+                description: selectedPreset?.description || '',
+                author: selectedPreset?.author || '',
+                tags: selectedPreset?.tags || [],
+            },
+            recipe: {
+                generationMode: read(forge ? '#bbcf-draft-mode' : '#bbcf-generation-mode', settings.generationMode),
+                insertMode: read(forge ? '#bbcf-draft-insert-mode' : '#bbcf-insert-mode', settings.insertMode),
+                panelCount: read(forge ? '#bbcf-draft-count' : '#bbcf-panel-count', settings.panelCount),
+                draftPrompt: forge ? settings.draftPrompt : read('#bbcf-draft-prompt', settings.draftPrompt),
+                customPrompt: read(forge ? '#bbcf-draft-custom-style' : '#bbcf-custom-style', settings.customPrompt),
+                negativePrompt: read(forge ? '#bbcf-draft-negative' : '#bbcf-negative', settings.negativePrompt),
+            },
+            style: {
+                name: style.label || 'Comic style',
+                prompt: style.prompt,
+            },
+            layout: {
+                name: layout.label || layout.id || 'Comic layout',
+                pattern: layout.pattern,
+                intent: layout.intent || '',
+                singleAspect: layout.singleAspect || layout.pattern[0] || '3:4',
+            },
+            recommendations: {
+                apiType: settings.apiType,
+                model: settings.apiType === 'naistera' ? settings.naisteraModel : settings.model,
+                size: settings.apiType === 'openai-images' ? settings.openaiSize : (settings.imageSize || settings.aspectRatio),
+                quality: settings.apiType === 'openai-images' ? settings.openaiQuality : '',
+            },
+        });
+    }
+
+    async function importPortablePresetFile(file, root, source) {
+        if (file.size > 1024 * 1024) throw new Error('Файл пресета больше 1 МБ.');
+        let raw;
+        try {
+            raw = JSON.parse(await file.text());
+        } catch (error) {
+            throw new Error('Не удалось прочитать JSON пресета.');
+        }
+        const portable = normalizePortablePreset(raw);
+        const result = await showPortablePresetPreview(portable);
+        if (result !== POPUP_RESULT.AFFIRMATIVE && result !== POPUP_RESULT.CUSTOM1) return;
+        const imported = installPortablePreset(portable);
+        const apply = result === POPUP_RESULT.AFFIRMATIVE;
+        if (apply) {
+            const settings = getSettings();
+            settings.activeDraftPromptPresetId = imported.id;
+            saveSettings();
+        }
+        syncPresetUi();
+        syncDraftPromptPresetUi({ forceName: true });
+        if (apply) {
+            const selector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset';
+            const select = root?.querySelector(selector);
+            if (select) select.value = imported.id;
+            applyDraftPromptPreset(root, { source, notify: false });
+            notifySuccess('Пресет импортирован и применён.');
+        } else {
+            notifySuccess('Пресет импортирован. Он доступен в списке наборов.');
+        }
+    }
+
+    function installPortablePreset(portable) {
+        const settings = getSettings();
+        const styleId = makeId('style');
+        const layoutId = makeId('layout');
+        const preset = {
+            id: makeId('draft-prompt'),
+            label: portable.metadata.name,
+            kind: 'comic',
+            description: portable.metadata.description,
+            author: portable.metadata.author,
+            tags: portable.metadata.tags,
+            recommendations: portable.recommendations,
+            portableVersion: portable.version,
+            importedAt: new Date().toISOString(),
+            draftPrompt: portable.recipe.draftPrompt,
+            generationMode: portable.recipe.generationMode,
+            insertMode: portable.recipe.insertMode,
+            panelCount: portable.recipe.panelCount,
+            layout: `saved:${layoutId}`,
+            stylePreset: `saved:${styleId}`,
+            characterLock: '',
+            panelNotes: '',
+            bubbles: '',
+            inserts: '',
+            sfx: '',
+            customPrompt: portable.recipe.customPrompt,
+            negativePrompt: portable.recipe.negativePrompt,
+        };
+        settings.savedStyles.unshift({ id: styleId, label: portable.style.name, prompt: portable.style.prompt });
+        settings.savedLayouts.unshift({
+            id: layoutId,
+            label: portable.layout.name,
+            pattern: portable.layout.pattern,
+            intent: portable.layout.intent,
+            singleAspect: portable.layout.singleAspect,
+        });
+        settings.draftPromptPresets.unshift(preset);
+        saveSettings();
+        return preset;
+    }
+
+    async function showPortablePresetPreview(preset) {
+        const recommendations = [
+            preset.recommendations.apiType,
+            preset.recommendations.model,
+            preset.recommendations.size,
+            preset.recommendations.quality,
+        ].filter(Boolean).join(' · ');
+        const content = document.createElement('div');
+        content.className = 'bbcf-preset-import-preview';
+        content.innerHTML = `
+            <h3>Импорт пресета</h3>
+            <strong class="bbcf-preset-import-title">${escapeHtml(preset.metadata.name)}</strong>
+            ${preset.metadata.author ? `<p>Автор: ${escapeHtml(preset.metadata.author)}</p>` : ''}
+            ${preset.metadata.description ? `<p>${escapeHtml(preset.metadata.description)}</p>` : ''}
+            <div class="bbcf-preset-import-list">
+                <span><i class="fa-solid fa-check"></i> AI-промпт черновика</span>
+                <span><i class="fa-solid fa-check"></i> Стиль: ${escapeHtml(preset.style.name)}</span>
+                <span><i class="fa-solid fa-check"></i> Макет: ${escapeHtml(preset.layout.name)}</span>
+                <span><i class="fa-solid fa-check"></i> Дополнительные инструкции</span>
+                <span><i class="fa-solid fa-check"></i> Negative prompt</span>
+                <span><i class="fa-solid fa-check"></i> ${preset.recipe.generationMode === 'single' ? 'Экономный режим' : 'Генерация по панелям'} · ${preset.recipe.panelCount} пан.</span>
+            </div>
+            ${recommendations ? `<p class="bbcf-preset-recommendation"><b>Рекомендация:</b> ${escapeHtml(recommendations)}</p>` : ''}
+            <p class="bbcf-muted">Текущее подключение, API key, персонажи, референсы и содержимое сцены не изменятся.</p>
+        `;
+        const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
+            okButton: 'Импорт и применить',
+            cancelButton: 'Отмена',
+            wider: true,
+            leftAlign: true,
+            allowVerticalScrolling: true,
+            customButtons: [{
+                text: 'Только импорт',
+                result: POPUP_RESULT.CUSTOM1,
+                icon: 'fa-download',
+            }],
+        });
+        return popup.show();
+    }
+
     return {
         applyDraftPromptPreset,
+        bindPortablePresetActions,
         bindPresetDeleteActions,
         deleteDraftPromptPreset,
         getLayoutPresetById,

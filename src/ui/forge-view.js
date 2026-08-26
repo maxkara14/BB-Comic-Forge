@@ -175,6 +175,11 @@ export function renderForgeHtml(settings, savedDraft) {
                             <button class="menu_button" type="button" id="bbcf-forge-save-draft-prompt-preset"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>
                             <button class="menu_button bbcf-danger" type="button" id="bbcf-forge-delete-draft-prompt-preset" ${activeDraftPromptPreset ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить</span></button>
                         </div>
+                        <div class="bbcf-compact-actions bbcf-portable-preset-actions">
+                            <button class="menu_button" type="button" id="bbcf-forge-export-comic-preset"><i class="fa-solid fa-file-export"></i><span>Экспортировать пресет</span></button>
+                            <button class="menu_button" type="button" id="bbcf-forge-import-comic-preset"><i class="fa-solid fa-file-import"></i><span>Импортировать пресет</span></button>
+                            <input id="bbcf-forge-import-comic-preset-file" type="file" accept=".json,.bbcf-preset.json,application/json" hidden>
+                        </div>
                     </div>
                     <div class="bbcf-field">
                         <label for="bbcf-draft-custom-style">Дополнительные инструкции к генерации</label>

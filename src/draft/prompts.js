@@ -1,6 +1,7 @@
 import { MAX_PANELS } from '../core/constants.js';
 import { makeId } from '../core/id.js';
 import { clampInt } from '../core/numbers.js';
+import { normalizePortablePresetMetadata } from '../presets/portable.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_SETTINGS, DRAFT_CAST_DIALOGUE_RULES } from '../settings/defaults.js';
 
 export function migrateDraftPrompt(value) {
@@ -67,6 +68,7 @@ export function normalizeDraftPromptPresets(rawPresets) {
         .map(preset => ({
             id: String(preset.id || makeId('draft-prompt')),
             label: String(preset.label || preset.name || 'Мой набор черновика').trim(),
+            ...normalizePortablePresetMetadata(preset),
             draftPrompt: migrateDraftPrompt(preset.draftPrompt ?? preset.prompt ?? ''),
             generationMode: ['panels', 'single'].includes(preset.generationMode) ? preset.generationMode : DEFAULT_SETTINGS.generationMode,
             insertMode: ['new', 'append_last'].includes(preset.insertMode) ? preset.insertMode : DEFAULT_SETTINGS.insertMode,
