@@ -1360,6 +1360,11 @@
     color: var(--SmartThemeBodyColor);
 }
 
+.popup.bbcf-preset-library-popup {
+    width: min(var(--bbcf-preset-library-width, 660px), calc(100dvw - 2em));
+    transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .bbcf-preset-library-header,
 .bbcf-preset-library-toolbar {
     display: flex;
@@ -3023,6 +3028,7 @@ body.bbcf-lightbox-open {
 }
 
 @media (prefers-reduced-motion: reduce) {
+    .popup.bbcf-preset-library-popup,
     .bbcf-disclosure-panel,
     .bbcf-disclosure-panel-inner,
     .bbcf-disclosure-toggle,

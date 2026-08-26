@@ -442,6 +442,12 @@ export function createPresetSettingsController(dependencies) {
             leftAlign: true,
             allowVerticalScrolling: true,
         });
+        popup.dlg.classList.add('bbcf-preset-library-popup');
+        const updatePopupWidth = () => {
+            const columns = Number(getSettings().presetLibraryColumns) || DEFAULT_SETTINGS.presetLibraryColumns;
+            const widths = { 2: 660, 4: 1090, 6: 1360 };
+            popup.dlg.style.setProperty('--bbcf-preset-library-width', `${widths[columns] || widths[2]}px`);
+        };
         const updateGridLayout = () => {
             const grid = content.querySelector('.bbcf-preset-library-grid');
             if (!grid) return;
@@ -510,6 +516,7 @@ export function createPresetSettingsController(dependencies) {
                     getSettings().presetLibraryColumns = columns;
                     saveSettings();
                     syncColumnButtons();
+                    updatePopupWidth();
                     updateGridLayout();
                 }
                 return;
@@ -568,6 +575,7 @@ export function createPresetSettingsController(dependencies) {
         });
         const resizeObserver = new ResizeObserver(updateGridLayout);
         resizeObserver.observe(content);
+        updatePopupWidth();
         try {
             await popup.show();
         } finally {
