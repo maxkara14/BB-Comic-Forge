@@ -22,14 +22,13 @@ import {
     MAX_PREVIOUS_CONTEXT_IMAGES,
     MODAL_ID,
     MODULE_NAME,
-    ONLYSQ_IMAGEN_ENDPOINT,
     SETTINGS_ID,
     UPLOAD_ALLOWED_FORMATS,
     VALID_IMAGE_SIZES,
 } from './src/core/constants.js';
 import { makeId } from './src/core/id.js';
 import { clampInt } from './src/core/numbers.js';
-import { stripHtmlForError, uniqueStrings } from './src/core/strings.js';
+import { uniqueStrings } from './src/core/strings.js';
 import {
     normalizeBubblePosition,
     normalizeBubbleType,
@@ -73,6 +72,7 @@ import {
     extractTextFromGeminiResult,
     parseImageDataUrl,
 } from './src/providers/responses.js';
+import { createCancellationError, isAbortError, requestJson, throwIfAborted } from './src/providers/transport.js';
 import {
     buildDraftConnectionProfileOptionsHtml,
     buildDraftModelOptionsHtml,
@@ -3302,97 +3302,8 @@ async function generateNaisteraImage(panel, references = [], signal = null) {
 }
 
 async function fetchJson(url, options = {}) {
-    const settings = getSettings();
-    const timeoutController = new AbortController();
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-        timedOut = true;
-        timeoutController.abort();
-    }, settings.timeoutMs);
-    const { signal, cleanup } = combineAbortSignals(options.signal, timeoutController.signal);
-    const { signal: _signal, ...fetchOptions } = options;
-    try {
-        const response = await fetch(url, { ...fetchOptions, signal });
-        const text = await response.text();
-        if (!response.ok) {
-            const error = new Error(formatApiError(response.status, text, url));
-            error.apiStatus = response.status;
-            error.apiBody = text;
-            throw error;
-        }
-        try {
-            return JSON.parse(text);
-        } catch (error) {
-            throw new Error(`API returned invalid JSON: ${stripHtmlForError(text).slice(0, 220)}`);
-        }
-    } catch (error) {
-        if (isAbortError(error)) {
-            if (timedOut && !options.signal?.aborted) throw new Error('API request timed out.');
-            throw createCancellationError();
-        }
-        throw error;
-    } finally {
-        clearTimeout(timeout);
-        cleanup();
-    }
+    return requestJson(url, options, getSettings().timeoutMs);
 }
-
-function combineAbortSignals(...signals) {
-    const active = signals.filter(Boolean);
-    if (!active.length) return { signal: undefined, cleanup: () => {} };
-    if (active.length === 1) return { signal: active[0], cleanup: () => {} };
-    const controller = new AbortController();
-    const listeners = [];
-    const abortFrom = source => {
-        if (controller.signal.aborted) return;
-        try {
-            controller.abort(source.reason);
-        } catch (error) {
-            controller.abort();
-        }
-    };
-    for (const source of active) {
-        if (source.aborted) {
-            abortFrom(source);
-            break;
-        }
-        const listener = () => abortFrom(source);
-        source.addEventListener('abort', listener, { once: true });
-        listeners.push([source, listener]);
-    }
-    return {
-        signal: controller.signal,
-        cleanup: () => listeners.forEach(([source, listener]) => source.removeEventListener('abort', listener)),
-    };
-}
-
-function createCancellationError(message = 'Генерация отменена.') {
-    const error = new Error(message);
-    error.name = 'AbortError';
-    error.bbcfCancelled = true;
-    return error;
-}
-
-function isAbortError(error) {
-    return Boolean(error?.bbcfCancelled || error?.name === 'AbortError');
-}
-
-function throwIfAborted(signal) {
-    if (signal?.aborted) throw createCancellationError();
-}
-
-function formatApiError(status, body, url = '') {
-    const message = stripHtmlForError(body).slice(0, 500) || 'empty response';
-    if (status === 404 && /api\.onlysq\.ru/i.test(url) && !/\/ai\/openai/i.test(url)) {
-        return `API 404: OnlySQ ImaGen должен идти в ${ONLYSQ_IMAGEN_ENDPOINT}, не в /ai/ как OpenAI Images. Сейчас запрос был: ${url}`;
-    }
-    if (status === 429) return `API 429: лимит запросов или очередь провайдера. Подожди немного или снизь параллельность до 1. ${message}`;
-    return `API ${status}: ${message}`;
-}
-
-
-
-
 
 async function fetchUrlAsDataUrl(url, signal = null) {
     throwIfAborted(signal);
