@@ -23,7 +23,6 @@ import {
     MODAL_ID,
     MODULE_NAME,
     SETTINGS_ID,
-    UPLOAD_ALLOWED_FORMATS,
     VALID_IMAGE_SIZES,
 } from './src/core/constants.js';
 import { makeId } from './src/core/id.js';
@@ -54,6 +53,7 @@ import {
     readClipboardImageFile,
     readFileAsDataUrl,
 } from './src/images/browser.js';
+import { uploadGeneratedImage, uploadReferenceImage } from './src/images/storage.js';
 import {
     describeLayoutIntent as resolveLayoutIntent,
     getBuiltinLayoutId,
@@ -3321,34 +3321,10 @@ async function fetchJson(url, options = {}) {
 }
 
 async function saveImageToFile(dataUrl, panelNumber = 0, signal = null) {
-    throwIfAborted(signal);
-    const context = SillyTavern.getContext();
-    let parsed = parseImageDataUrl(dataUrl);
-    if (!UPLOAD_ALLOWED_FORMATS.has(parsed.normalizedFormat)) {
-        parsed = parseImageDataUrl(await convertDataUrlToPng(dataUrl));
-    }
-    throwIfAborted(signal);
-    const characterName = getCurrentCharacterName() || 'comic_forge';
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `bbcf_p${panelNumber || 0}_${timestamp}`;
-    const response = await fetch('/api/images/upload', {
-        method: 'POST',
-        headers: context.getRequestHeaders(),
-        signal,
-        body: JSON.stringify({
-            image: parsed.base64Data,
-            format: parsed.normalizedFormat,
-            ch_name: characterName,
-            filename,
-        }),
+    return uploadGeneratedImage(dataUrl, panelNumber, signal, {
+        getContext: () => SillyTavern.getContext(),
+        getCharacterName: () => getCurrentCharacterName(),
     });
-    if (!response.ok) {
-        const raw = await response.text().catch(() => '');
-        throw new Error(raw || `Upload failed: ${response.status}`);
-    }
-    const result = await response.json();
-    if (!result?.path) throw new Error('Upload response did not contain image path.');
-    return result.path;
 }
 
 async function withBusyButton(button, busyHtml, task) {
@@ -3369,32 +3345,10 @@ async function withBusyButton(button, busyHtml, task) {
 }
 
 async function saveReferenceImageToFile(dataUrl, slotId) {
-    const context = SillyTavern.getContext();
-    let parsed = parseImageDataUrl(dataUrl);
-    if (!UPLOAD_ALLOWED_FORMATS.has(parsed.normalizedFormat)) {
-        parsed = parseImageDataUrl(await convertDataUrlToPng(dataUrl));
-    }
-    const safeSlot = String(slotId || 'ref').replace(/[^a-z0-9_-]/gi, '_').slice(0, 24);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const response = await fetch('/api/images/upload', {
-        method: 'POST',
-        headers: context.getRequestHeaders(),
-        body: JSON.stringify({
-            image: parsed.base64Data,
-            format: parsed.normalizedFormat,
-            ch_name: 'bbcf_refs',
-            filename: `bbcf_ref_${safeSlot}_${timestamp}`,
-        }),
+    return uploadReferenceImage(dataUrl, slotId, {
+        getContext: () => SillyTavern.getContext(),
     });
-    if (!response.ok) {
-        const raw = await response.text().catch(() => '');
-        throw new Error(raw || `Upload failed: ${response.status}`);
-    }
-    const result = await response.json();
-    if (!result?.path) throw new Error('Upload response did not contain image path.');
-    return result.path;
 }
-
 
 async function insertComicIntoChat(html, mode = 'new', targetMessageId = null) {
     const context = SillyTavern.getContext();
