@@ -143,13 +143,10 @@ const {
 });
 
 const {
-    applyDraftPromptPreset,
-    bindPortablePresetActions,
+    bindPresetLibraryActions,
     bindPresetDeleteActions,
-    deleteDraftPromptPreset,
     getLayoutPresetById,
     getStylePresetById,
-    saveDraftPromptPreset,
     saveLayoutFromDraft,
     saveLayoutFromSettings,
     saveStyleFromDraft,
@@ -582,7 +579,7 @@ function createSettingsUi() {
     syncImageConnectionProfileUi(wrapper);
     syncDraftConnectionRows();
     syncDraftConnectionProfileUi(wrapper);
-    syncDraftPromptPresetUi({ forceName: true });
+    syncDraftPromptPresetUi();
     refreshSettingsDashboard(wrapper);
 }
 
@@ -615,10 +612,7 @@ function bindSettingsUi(root) {
     root.querySelector('#bbcf-draft-connection-profile')?.addEventListener('change', () => applyDraftConnectionProfile(root));
     root.querySelector('#bbcf-save-draft-connection-profile')?.addEventListener('click', () => saveDraftConnectionProfile(root));
     root.querySelector('#bbcf-delete-draft-connection-profile')?.addEventListener('click', () => deleteDraftConnectionProfile(root));
-    root.querySelector('#bbcf-draft-prompt-preset')?.addEventListener('change', () => applyDraftPromptPreset(root, { source: 'settings' }));
-    root.querySelector('#bbcf-save-draft-prompt-preset')?.addEventListener('click', () => saveDraftPromptPreset(root, { source: 'settings' }));
-    root.querySelector('#bbcf-delete-draft-prompt-preset')?.addEventListener('click', () => deleteDraftPromptPreset(root));
-    bindPortablePresetActions(root, { source: 'settings' });
+    bindPresetLibraryActions(root, { source: 'settings' });
     bindPresetDeleteActions(root);
     bindReferenceSettings(root);
     bindSettingInput(root, '#bbcf-enabled', 'enabled', 'checked', () => updateFloatingButton());
@@ -728,7 +722,7 @@ function resetDefaultPageSettings(root) {
     setSettingsControlValue(root, '#bbcf-draft-prompt', settings.draftPrompt);
     persistCharacterLockProfile(settings);
     saveSettings();
-    syncDraftPromptPresetUi({ forceName: true });
+    syncDraftPromptPresetUi();
     syncDefaultDraftFields(DRAFT_SYNC_FIELDS);
     toastr.success('Настройки страницы по умолчанию восстановлены.', 'Comic Forge');
 }
@@ -887,8 +881,7 @@ function refreshForgeWorkflowSummary(root = state.modal) {
     const generationMode = valueOf(root, '#bbcf-draft-mode') === 'single' ? 'экономно' : 'по панелям';
     const layoutLabel = getSelectedControlLabel(root, '#bbcf-draft-layout', settings.layout);
     const styleLabel = getSelectedControlLabel(root, '#bbcf-draft-style', getStylePresetById(settings.stylePreset, settings)?.label || 'Стиль');
-    const selectedDraftPreset = root.querySelector('#bbcf-forge-draft-prompt-preset');
-    const draftPresetLabel = selectedDraftPreset?.value ? getSelectedControlLabel(root, '#bbcf-forge-draft-prompt-preset') : '';
+    const draftPresetLabel = getActiveDraftPromptPreset(settings)?.label || '';
     const recipeTitle = root.querySelector('#bbcf-forge-recipe-title');
     const recipeMeta = root.querySelector('#bbcf-forge-recipe-meta');
     if (recipeTitle) recipeTitle.textContent = draftPresetLabel || styleLabel || 'Текущие настройки';
@@ -994,10 +987,7 @@ function openForgeModal(options = {}) {
     });
     root.querySelector('#bbcf-draft-save-style')?.addEventListener('click', () => saveStyleFromDraft(root));
     root.querySelector('#bbcf-draft-save-layout')?.addEventListener('click', () => saveLayoutFromDraft(root));
-    root.querySelector('#bbcf-forge-draft-prompt-preset')?.addEventListener('change', () => applyDraftPromptPreset(root, { source: 'forge' }));
-    root.querySelector('#bbcf-forge-save-draft-prompt-preset')?.addEventListener('click', () => saveDraftPromptPreset(root, { source: 'forge' }));
-    root.querySelector('#bbcf-forge-delete-draft-prompt-preset')?.addEventListener('click', () => deleteDraftPromptPreset(root));
-    bindPortablePresetActions(root, { source: 'forge' });
+    bindPresetLibraryActions(root, { source: 'forge' });
     bindPresetDeleteActions(root);
     root.querySelector('#bbcf-draft-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();

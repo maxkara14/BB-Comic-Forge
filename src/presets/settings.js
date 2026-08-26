@@ -2,8 +2,13 @@
 import { DRAFT_SYNC_FIELDS, MAX_PANELS, SETTINGS_ID } from '../core/constants.js';
 import { makeId } from '../core/id.js';
 import { clampInt } from '../core/numbers.js';
-import { buildDraftPromptPresetOptionsHtml, getActiveDraftPromptPreset } from '../draft/view.js';
 import { getLayoutPresetById as resolveLayoutPresetById, getStylePresetById as resolveStylePresetById } from './resolvers.js';
+import {
+    buildActiveComicPresetHtml,
+    buildPresetDetailsHtml,
+    buildPresetLibraryCardsHtml,
+    buildPresetLibraryHtml,
+} from './library-view.js';
 import { buildLayoutExamplesHtml, buildLayoutOptionsHtml, buildStyleExamplesHtml, buildStyleOptionsHtml } from './view.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_SETTINGS } from '../settings/defaults.js';
 import { normalizeAspectPattern } from '../settings/normalizers.js';
@@ -12,6 +17,7 @@ import {
     createPortablePreset,
     getPortablePresetFilename,
     normalizePortablePreset,
+    PORTABLE_PRESET_VERSION,
 } from './portable.js';
 
 const PORTABLE_DRAFT_FIELDS = [
@@ -47,36 +53,26 @@ export function createPresetSettingsController(dependencies) {
         valueOf,
     } = dependencies;
 
-    function syncDraftPromptPresetUi({ forceName = false } = {}) {
+    function syncDraftPromptPresetUi() {
         const settings = getSettings();
-        const active = getActiveDraftPromptPreset(settings);
         const settingsRoot = document.getElementById(SETTINGS_ID);
         const modalRoot = state.modal?.isConnected ? state.modal : null;
-        const targets = [
-            { root: settingsRoot, select: '#bbcf-draft-prompt-preset', name: '#bbcf-draft-prompt-preset-name', del: '#bbcf-delete-draft-prompt-preset' },
-            { root: modalRoot, select: '#bbcf-forge-draft-prompt-preset', name: '#bbcf-forge-draft-prompt-preset-name', del: '#bbcf-forge-delete-draft-prompt-preset' },
-        ];
-        for (const target of targets) {
-            if (!target.root) continue;
-            updateSelectOptions(target.root.querySelector(target.select), buildDraftPromptPresetOptionsHtml(settings), settings.activeDraftPromptPresetId);
-            const name = target.root.querySelector(target.name);
-            if (name && document.activeElement !== name && (forceName || !name.value.trim())) name.value = active?.label || '';
-            const deleteButton = target.root.querySelector(target.del);
-            if (deleteButton) deleteButton.disabled = !active;
+        for (const root of [settingsRoot, modalRoot].filter(Boolean)) {
+            const card = root.querySelector('[data-bbcf-active-preset-card]');
+            if (card) card.innerHTML = buildActiveComicPresetHtml(settings);
         }
         refreshSettingsDashboard(settingsRoot);
         refreshForgeWorkflowSummary(modalRoot);
     }
 
-    function applyDraftPromptPreset(root, { source = 'settings', notify = true } = {}) {
+    function applyDraftPromptPreset(root, { source = 'settings', notify = true, presetId = '' } = {}) {
         const settings = getSettings();
-        const selectSelector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset';
-        const selectedId = String(root?.querySelector(selectSelector)?.value || '');
+        const selectedId = String(presetId || '');
         const preset = settings.draftPromptPresets.find(item => item.id === selectedId);
         if (!preset) {
             settings.activeDraftPromptPresetId = '';
             saveSettings();
-            syncDraftPromptPresetUi({ forceName: true });
+            syncDraftPromptPresetUi();
             refreshForgeWorkflowSummary(root);
             return;
         }
@@ -136,62 +132,130 @@ export function createPresetSettingsController(dependencies) {
             setSettingsControlValue(root, '#bbcf-negative', settings.negativePrompt);
             syncDefaultDraftFields(portableOnly ? PORTABLE_DRAFT_FIELDS : DRAFT_SYNC_FIELDS);
         }
-        syncDraftPromptPresetUi({ forceName: true });
+        syncDraftPromptPresetUi();
         refreshForgeWorkflowSummary(state.modal);
         if (notify) notifySuccess('Набор черновика применён.');
     }
 
-    function saveDraftPromptPreset(root, { source = 'settings' } = {}) {
+    async function createDraftPromptPresetFromCurrent(root, { source = 'settings' } = {}) {
         const settings = getSettings();
-        const nameSelector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset-name' : '#bbcf-draft-prompt-preset-name';
-        const selectedId = settings.activeDraftPromptPresetId || String(root?.querySelector(source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset')?.value || '');
-        const existingIndex = settings.draftPromptPresets.findIndex(preset => preset.id === selectedId);
-        const existing = existingIndex >= 0 ? settings.draftPromptPresets[existingIndex] : null;
-        const label = String(root?.querySelector(nameSelector)?.value || '').trim()
-            || (existing ? existing.label : `Набор черновика ${settings.draftPromptPresets.length + 1}`);
+        const suggestedName = `Мой пресет ${settings.draftPromptPresets.length + 1}`;
+        const value = await Popup.show.input('Новый пресет', 'Сохраним текущий стиль, макет и правила генерации. Сцена и персонажи в набор не войдут.', suggestedName, {
+            okButton: 'Сохранить',
+            cancelButton: 'Отмена',
+        });
+        if (value === null) return null;
+        const label = String(value || suggestedName).trim() || suggestedName;
+        const forge = source === 'forge';
+        const read = (selector, fallback = '') => String(root?.querySelector(selector)?.value ?? fallback);
         const preset = {
-            id: existing?.id || makeId('draft-prompt'),
+            id: makeId('draft-prompt'),
             label,
-            kind: existing?.kind || 'snapshot',
-            description: existing?.description || '',
-            author: existing?.author || '',
-            tags: existing?.tags || [],
-            recommendations: existing?.recommendations || {},
-            importedAt: existing?.importedAt || '',
-            draftPrompt: String(settings.draftPrompt || DEFAULT_DRAFT_PROMPT),
-            generationMode: source === 'forge' ? valueOf(root, '#bbcf-draft-mode') : settings.generationMode,
-            insertMode: source === 'forge' ? valueOf(root, '#bbcf-draft-insert-mode') : settings.insertMode,
-            panelCount: source === 'forge' ? clampInt(valueOf(root, '#bbcf-draft-count'), 1, MAX_PANELS, settings.panelCount) : settings.panelCount,
-            layout: source === 'forge' ? valueOf(root, '#bbcf-draft-layout') : settings.layout,
-            stylePreset: source === 'forge' ? valueOf(root, '#bbcf-draft-style') : settings.stylePreset,
-            characterLock: source === 'forge' ? valueOf(root, '#bbcf-draft-lock') : settings.characterLock,
-            panelNotes: source === 'forge' ? valueOf(root, '#bbcf-draft-notes') : settings.defaultPanelNotes,
-            bubbles: source === 'forge' ? valueOf(root, '#bbcf-draft-bubbles') : settings.defaultBubbles,
-            inserts: source === 'forge' ? valueOf(root, '#bbcf-draft-inserts') : settings.defaultInserts,
-            sfx: source === 'forge' ? valueOf(root, '#bbcf-draft-sfx') : settings.defaultSfx,
-            customPrompt: source === 'forge' ? valueOf(root, '#bbcf-draft-custom-style') : String(settings.customPrompt || ''),
-            negativePrompt: source === 'forge' ? valueOf(root, '#bbcf-draft-negative') : String(settings.negativePrompt || ''),
+            kind: 'comic',
+            description: '',
+            author: '',
+            tags: [],
+            recommendations: getCurrentRecommendations(settings),
+            portableVersion: PORTABLE_PRESET_VERSION,
+            importedAt: '',
+            draftPrompt: forge ? String(settings.draftPrompt || DEFAULT_DRAFT_PROMPT) : read('#bbcf-draft-prompt', settings.draftPrompt || DEFAULT_DRAFT_PROMPT),
+            generationMode: read(forge ? '#bbcf-draft-mode' : '#bbcf-generation-mode', settings.generationMode),
+            insertMode: read(forge ? '#bbcf-draft-insert-mode' : '#bbcf-insert-mode', settings.insertMode),
+            panelCount: clampInt(read(forge ? '#bbcf-draft-count' : '#bbcf-panel-count', settings.panelCount), 1, MAX_PANELS, settings.panelCount),
+            layout: read(forge ? '#bbcf-draft-layout' : '#bbcf-layout', settings.layout),
+            stylePreset: read(forge ? '#bbcf-draft-style' : '#bbcf-style-preset', settings.stylePreset),
+            characterLock: '',
+            panelNotes: '',
+            bubbles: '',
+            inserts: '',
+            sfx: '',
+            customPrompt: read(forge ? '#bbcf-draft-custom-style' : '#bbcf-custom-style', settings.customPrompt),
+            negativePrompt: read(forge ? '#bbcf-draft-negative' : '#bbcf-negative', settings.negativePrompt),
         };
-        if (existingIndex >= 0) settings.draftPromptPresets[existingIndex] = preset;
-        else settings.draftPromptPresets.unshift(preset);
+        settings.draftPromptPresets.unshift(preset);
         settings.activeDraftPromptPresetId = preset.id;
         saveSettings();
-        syncDraftPromptPresetUi({ forceName: true });
-        notifySuccess(existingIndex >= 0 ? 'Набор черновика обновлён.' : 'Набор черновика сохранён.');
+        syncDraftPromptPresetUi();
+        notifySuccess('Пресет сохранён в библиотеке.');
+        return preset;
     }
 
-    function deleteDraftPromptPreset(root = null) {
+    async function renameDraftPromptPreset(presetId) {
         const settings = getSettings();
-        const selectedId = settings.activeDraftPromptPresetId
-            || String(root?.querySelector('#bbcf-draft-prompt-preset, #bbcf-forge-draft-prompt-preset')?.value || '');
+        const preset = settings.draftPromptPresets.find(item => item.id === presetId);
+        if (!preset) return false;
+        const value = await Popup.show.input('Переименовать пресет', '', preset.label, {
+            okButton: 'Сохранить',
+            cancelButton: 'Отмена',
+        });
+        if (value === null) return false;
+        const label = String(value || '').trim();
+        if (!label) {
+            notifyWarning('Название пресета не может быть пустым.');
+            return false;
+        }
+        preset.label = label;
+        saveSettings();
+        syncDraftPromptPresetUi();
+        notifySuccess('Пресет переименован.');
+        return true;
+    }
+
+    function duplicateDraftPromptPreset(presetId) {
+        const settings = getSettings();
+        const sourcePreset = settings.draftPromptPresets.find(item => item.id === presetId);
+        if (!sourcePreset) return null;
+        const preset = structuredClone(sourcePreset);
+        preset.id = makeId('draft-prompt');
+        preset.label = `${sourcePreset.label} — копия`;
+        preset.importedAt = '';
+        settings.draftPromptPresets.unshift(preset);
+        saveSettings();
+        syncDraftPromptPresetUi();
+        notifySuccess('Копия пресета создана.');
+        return preset;
+    }
+
+    function updateDraftPromptPresetFromCurrent(presetId, root, source) {
+        const settings = getSettings();
+        const preset = settings.draftPromptPresets.find(item => item.id === presetId);
+        if (!preset) return false;
+        const forge = source === 'forge';
+        const read = (selector, fallback = '') => String(root?.querySelector(selector)?.value ?? fallback);
+        preset.draftPrompt = forge ? String(settings.draftPrompt || DEFAULT_DRAFT_PROMPT) : read('#bbcf-draft-prompt', settings.draftPrompt || DEFAULT_DRAFT_PROMPT);
+        preset.generationMode = read(forge ? '#bbcf-draft-mode' : '#bbcf-generation-mode', settings.generationMode);
+        preset.insertMode = read(forge ? '#bbcf-draft-insert-mode' : '#bbcf-insert-mode', settings.insertMode);
+        preset.panelCount = clampInt(read(forge ? '#bbcf-draft-count' : '#bbcf-panel-count', settings.panelCount), 1, MAX_PANELS, settings.panelCount);
+        preset.layout = read(forge ? '#bbcf-draft-layout' : '#bbcf-layout', settings.layout);
+        preset.stylePreset = read(forge ? '#bbcf-draft-style' : '#bbcf-style-preset', settings.stylePreset);
+        preset.customPrompt = read(forge ? '#bbcf-draft-custom-style' : '#bbcf-custom-style', settings.customPrompt);
+        preset.negativePrompt = read(forge ? '#bbcf-draft-negative' : '#bbcf-negative', settings.negativePrompt);
+        preset.recommendations = getCurrentRecommendations(settings);
+        if (preset.kind !== 'comic') {
+            preset.characterLock = forge ? read('#bbcf-draft-lock') : String(settings.characterLock || '');
+            preset.panelNotes = forge ? read('#bbcf-draft-notes') : String(settings.defaultPanelNotes || '');
+            preset.bubbles = forge ? read('#bbcf-draft-bubbles') : String(settings.defaultBubbles || '');
+            preset.inserts = forge ? read('#bbcf-draft-inserts') : String(settings.defaultInserts || '');
+            preset.sfx = forge ? read('#bbcf-draft-sfx') : String(settings.defaultSfx || '');
+        }
+        saveSettings();
+        syncDraftPromptPresetUi();
+        notifySuccess('Пресет обновлён текущими настройками.');
+        return true;
+    }
+
+    function deleteDraftPromptPreset(presetId = '') {
+        const settings = getSettings();
+        const selectedId = String(presetId || settings.activeDraftPromptPresetId || '');
         const preset = settings.draftPromptPresets.find(item => item.id === selectedId);
-        if (!preset) return;
+        if (!preset) return false;
         if (!window.confirm(`Удалить набор черновика "${preset.label}"?`)) return;
         settings.draftPromptPresets = settings.draftPromptPresets.filter(item => item.id !== selectedId);
-        settings.activeDraftPromptPresetId = '';
+        if (settings.activeDraftPromptPresetId === selectedId) settings.activeDraftPromptPresetId = '';
         saveSettings();
-        syncDraftPromptPresetUi({ forceName: true });
-        notifySuccess('Набор черновика удалён.');
+        syncDraftPromptPresetUi();
+        notifySuccess('Пресет удалён.');
+        return true;
     }
 
     function getStylePresetById(styleId, settings = getSettings()) {
@@ -358,36 +422,147 @@ export function createPresetSettingsController(dependencies) {
         notifySuccess('Макет сохранён.');
     }
 
-    function bindPortablePresetActions(root, { source = 'settings' } = {}) {
-        if (!root) return;
-        const prefix = source === 'forge' ? '#bbcf-forge' : '#bbcf';
-        const exportButton = root.querySelector(`${prefix}-export-comic-preset`);
-        const importButton = root.querySelector(`${prefix}-import-comic-preset`);
-        const fileInput = root.querySelector(`${prefix}-import-comic-preset-file`);
-        exportButton?.addEventListener('click', () => {
+    function bindPresetLibraryActions(root, { source = 'settings' } = {}) {
+        if (!root || root.dataset.bbcfPresetLibraryBound === '1') return;
+        root.dataset.bbcfPresetLibraryBound = '1';
+        root.addEventListener('click', async event => {
+            const openButton = event.target.closest?.('[data-bbcf-open-preset-library]');
+            const quickAction = event.target.closest?.('[data-bbcf-preset-quick-action]')?.dataset.bbcfPresetQuickAction;
+            if (!openButton && !quickAction) return;
+            event.preventDefault();
+            event.target.closest?.('details')?.removeAttribute('open');
             try {
-                exportPortablePreset(root, source);
+                if (openButton) await openPresetLibrary(root, source);
+                else if (quickAction === 'create') await createDraftPromptPresetFromCurrent(root, { source });
+                else if (quickAction === 'export') exportPortablePreset(root, source);
             } catch (error) {
-                console.error('[BB Comic Forge] preset export failed', error);
-                notifyWarning(error?.message || String(error));
-            }
-        });
-        importButton?.addEventListener('click', () => fileInput?.click());
-        fileInput?.addEventListener('change', async () => {
-            const file = fileInput.files?.[0];
-            fileInput.value = '';
-            if (!file) return;
-            try {
-                await importPortablePresetFile(file, root, source);
-            } catch (error) {
-                console.error('[BB Comic Forge] preset import failed', error);
-                notifyWarning(error?.message || String(error));
+                reportPresetError('preset action failed', error);
             }
         });
     }
 
-    function exportPortablePreset(root, source) {
-        const preset = collectPortablePreset(root, source);
+    async function openPresetLibrary(root, source) {
+        let filter = 'all';
+        let query = '';
+        const content = document.createElement('div');
+        content.innerHTML = buildPresetLibraryHtml(getSettings(), { filter, query });
+        const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', {
+            large: true,
+            leftAlign: true,
+            allowVerticalScrolling: true,
+        });
+        const refreshCards = () => {
+            const grid = content.querySelector('.bbcf-preset-library-grid');
+            if (grid) grid.innerHTML = buildPresetLibraryCardsHtml(getSettings(), { filter, query });
+            content.querySelectorAll('[data-bbcf-library-filter]').forEach(button => {
+                const active = button.dataset.bbcfLibraryFilter === filter;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', String(active));
+            });
+        };
+        content.addEventListener('input', event => {
+            if (!event.target.matches?.('[data-bbcf-library-search]')) return;
+            query = event.target.value;
+            refreshCards();
+        });
+        content.addEventListener('change', async event => {
+            if (!event.target.matches?.('[data-bbcf-library-import-file]')) return;
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            try {
+                const outcome = await importPortablePresetFile(file, root, source);
+                if (!outcome) return;
+                if (outcome.applied) {
+                    await popup.completeAffirmative();
+                    return;
+                }
+                filter = 'imported';
+                query = '';
+                const search = content.querySelector('[data-bbcf-library-search]');
+                if (search) search.value = '';
+                refreshCards();
+            } catch (error) {
+                reportPresetError('preset import failed', error);
+            }
+        });
+        content.addEventListener('click', async event => {
+            const filterButton = event.target.closest?.('[data-bbcf-library-filter]');
+            if (filterButton) {
+                filter = filterButton.dataset.bbcfLibraryFilter || 'all';
+                refreshCards();
+                return;
+            }
+            if (event.target.closest?.('[data-bbcf-library-import]')) {
+                content.querySelector('[data-bbcf-library-import-file]')?.click();
+                return;
+            }
+            if (event.target.closest?.('[data-bbcf-library-create]')) {
+                try {
+                    const created = await createDraftPromptPresetFromCurrent(root, { source });
+                    if (created) {
+                        filter = 'mine';
+                        query = '';
+                        const search = content.querySelector('[data-bbcf-library-search]');
+                        if (search) search.value = '';
+                        refreshCards();
+                    }
+                } catch (error) {
+                    reportPresetError('preset create failed', error);
+                }
+                return;
+            }
+            const actionButton = event.target.closest?.('[data-bbcf-library-action]');
+            if (!actionButton) return;
+            const action = actionButton.dataset.bbcfLibraryAction;
+            const presetId = actionButton.dataset.presetId;
+            event.target.closest?.('details')?.removeAttribute('open');
+            try {
+                if (action === 'apply') {
+                    applyDraftPromptPreset(root, { source, presetId });
+                    refreshCards();
+                    await popup.completeAffirmative();
+                } else if (action === 'view') {
+                    await showDraftPromptPresetDetails(presetId);
+                } else if (action === 'update') {
+                    if (updateDraftPromptPresetFromCurrent(presetId, root, source)) refreshCards();
+                } else if (action === 'rename') {
+                    if (await renameDraftPromptPreset(presetId)) refreshCards();
+                } else if (action === 'duplicate') {
+                    if (duplicateDraftPromptPreset(presetId)) refreshCards();
+                } else if (action === 'export') {
+                    exportPortablePreset(root, source, presetId);
+                } else if (action === 'delete') {
+                    if (deleteDraftPromptPreset(presetId)) refreshCards();
+                }
+            } catch (error) {
+                reportPresetError(`preset ${action} failed`, error);
+            }
+        });
+        await popup.show();
+    }
+
+    async function showDraftPromptPresetDetails(presetId) {
+        const settings = getSettings();
+        const preset = settings.draftPromptPresets.find(item => item.id === presetId);
+        if (!preset) return;
+        const content = document.createElement('div');
+        content.innerHTML = buildPresetDetailsHtml(settings, preset);
+        const popup = new Popup(content, POPUP_TYPE.DISPLAY, '', {
+            wider: true,
+            leftAlign: true,
+            allowVerticalScrolling: true,
+        });
+        await popup.show();
+    }
+
+    function reportPresetError(context, error) {
+        console.error(`[BB Comic Forge] ${context}`, error);
+        notifyWarning(error?.message || String(error));
+    }
+
+    function exportPortablePreset(root, source, presetId = '') {
+        const preset = collectPortablePreset(root, source, presetId);
         const blob = new Blob([`${JSON.stringify(preset, null, 2)}\n`], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement('a');
@@ -400,34 +575,38 @@ export function createPresetSettingsController(dependencies) {
         notifySuccess('Пресет экспортирован.');
     }
 
-    function collectPortablePreset(root, source) {
+    function collectPortablePreset(root, source, presetId = '') {
         const settings = getSettings();
         const forge = source === 'forge';
         const read = (selector, fallback = '') => String(root?.querySelector(selector)?.value ?? fallback);
-        const styleId = read(forge ? '#bbcf-draft-style' : '#bbcf-style-preset', settings.stylePreset);
-        const layoutId = read(forge ? '#bbcf-draft-layout' : '#bbcf-layout', settings.layout);
+        const requestedPreset = settings.draftPromptPresets.find(item => item.id === presetId);
+        if (presetId && !requestedPreset) throw new Error('Пресет больше не существует. Обнови библиотеку.');
+        const selectedPreset = requestedPreset
+            || settings.draftPromptPresets.find(item => item.id === settings.activeDraftPromptPresetId);
+        const stored = requestedPreset || null;
+        const styleId = stored?.stylePreset || read(forge ? '#bbcf-draft-style' : '#bbcf-style-preset', settings.stylePreset);
+        const layoutId = stored?.layout || read(forge ? '#bbcf-draft-layout' : '#bbcf-layout', settings.layout);
         const style = getStylePresetById(styleId, settings);
         const layout = getLayoutPresetById(layoutId, settings);
         if (!style?.prompt) throw new Error('Выбранный стиль не содержит prompt.');
         if (!layout?.pattern?.length) throw new Error('Выбранный макет не содержит панелей.');
-        const presetSelect = root?.querySelector(forge ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset');
-        const selectedPreset = settings.draftPromptPresets.find(item => item.id === presetSelect?.value)
-            || settings.draftPromptPresets.find(item => item.id === settings.activeDraftPromptPresetId);
-        const typedName = read(forge ? '#bbcf-forge-draft-prompt-preset-name' : '#bbcf-draft-prompt-preset-name').trim();
+        const recommendations = stored?.recommendations && Object.values(stored.recommendations).some(Boolean)
+            ? stored.recommendations
+            : getCurrentRecommendations(settings);
         return createPortablePreset({
             metadata: {
-                name: typedName || selectedPreset?.label || style.label || 'Comic Forge Preset',
+                name: selectedPreset?.label || style.label || 'Comic Forge Preset',
                 description: selectedPreset?.description || '',
                 author: selectedPreset?.author || '',
                 tags: selectedPreset?.tags || [],
             },
             recipe: {
-                generationMode: read(forge ? '#bbcf-draft-mode' : '#bbcf-generation-mode', settings.generationMode),
-                insertMode: read(forge ? '#bbcf-draft-insert-mode' : '#bbcf-insert-mode', settings.insertMode),
-                panelCount: read(forge ? '#bbcf-draft-count' : '#bbcf-panel-count', settings.panelCount),
-                draftPrompt: forge ? settings.draftPrompt : read('#bbcf-draft-prompt', settings.draftPrompt),
-                customPrompt: read(forge ? '#bbcf-draft-custom-style' : '#bbcf-custom-style', settings.customPrompt),
-                negativePrompt: read(forge ? '#bbcf-draft-negative' : '#bbcf-negative', settings.negativePrompt),
+                generationMode: stored?.generationMode || read(forge ? '#bbcf-draft-mode' : '#bbcf-generation-mode', settings.generationMode),
+                insertMode: stored?.insertMode || read(forge ? '#bbcf-draft-insert-mode' : '#bbcf-insert-mode', settings.insertMode),
+                panelCount: stored?.panelCount || read(forge ? '#bbcf-draft-count' : '#bbcf-panel-count', settings.panelCount),
+                draftPrompt: stored?.draftPrompt || (forge ? settings.draftPrompt : read('#bbcf-draft-prompt', settings.draftPrompt)),
+                customPrompt: stored ? stored.customPrompt : read(forge ? '#bbcf-draft-custom-style' : '#bbcf-custom-style', settings.customPrompt),
+                negativePrompt: stored ? stored.negativePrompt : read(forge ? '#bbcf-draft-negative' : '#bbcf-negative', settings.negativePrompt),
             },
             style: {
                 name: style.label || 'Comic style',
@@ -439,13 +618,17 @@ export function createPresetSettingsController(dependencies) {
                 intent: layout.intent || '',
                 singleAspect: layout.singleAspect || layout.pattern[0] || '3:4',
             },
-            recommendations: {
-                apiType: settings.apiType,
-                model: settings.apiType === 'naistera' ? settings.naisteraModel : settings.model,
-                size: settings.apiType === 'openai-images' ? settings.openaiSize : (settings.imageSize || settings.aspectRatio),
-                quality: settings.apiType === 'openai-images' ? settings.openaiQuality : '',
-            },
+            recommendations,
         });
+    }
+
+    function getCurrentRecommendations(settings) {
+        return {
+            apiType: settings.apiType,
+            model: settings.apiType === 'naistera' ? settings.naisteraModel : settings.model,
+            size: settings.apiType === 'openai-images' ? settings.openaiSize : (settings.imageSize || settings.aspectRatio),
+            quality: settings.apiType === 'openai-images' ? settings.openaiQuality : '',
+        };
     }
 
     async function importPortablePresetFile(file, root, source) {
@@ -458,7 +641,7 @@ export function createPresetSettingsController(dependencies) {
         }
         const portable = normalizePortablePreset(raw);
         const result = await showPortablePresetPreview(portable);
-        if (result !== POPUP_RESULT.AFFIRMATIVE && result !== POPUP_RESULT.CUSTOM1) return;
+        if (result !== POPUP_RESULT.AFFIRMATIVE && result !== POPUP_RESULT.CUSTOM1) return null;
         const imported = installPortablePreset(portable);
         const apply = result === POPUP_RESULT.AFFIRMATIVE;
         if (apply) {
@@ -467,16 +650,14 @@ export function createPresetSettingsController(dependencies) {
             saveSettings();
         }
         syncPresetUi();
-        syncDraftPromptPresetUi({ forceName: true });
+        syncDraftPromptPresetUi();
         if (apply) {
-            const selector = source === 'forge' ? '#bbcf-forge-draft-prompt-preset' : '#bbcf-draft-prompt-preset';
-            const select = root?.querySelector(selector);
-            if (select) select.value = imported.id;
-            applyDraftPromptPreset(root, { source, notify: false });
+            applyDraftPromptPreset(root, { source, notify: false, presetId: imported.id });
             notifySuccess('Пресет импортирован и применён.');
         } else {
             notifySuccess('Пресет импортирован. Он доступен в списке наборов.');
         }
+        return { preset: imported, applied: apply };
     }
 
     function installPortablePreset(portable) {
@@ -561,13 +742,10 @@ export function createPresetSettingsController(dependencies) {
     }
 
     return {
-        applyDraftPromptPreset,
-        bindPortablePresetActions,
+        bindPresetLibraryActions,
         bindPresetDeleteActions,
-        deleteDraftPromptPreset,
         getLayoutPresetById,
         getStylePresetById,
-        saveDraftPromptPreset,
         saveLayoutFromDraft,
         saveLayoutFromSettings,
         saveStyleFromDraft,
