@@ -33,6 +33,12 @@ import {
     splitLines,
 } from './src/comic/syntax.js';
 import { createPanelPlans, createSinglePagePanel } from './src/comic/planner.js';
+import {
+    buildStandaloneComicDocument,
+    extractImagePathsFromHtml,
+    makeShareHtml,
+    safeFilename,
+} from './src/comic/artifacts.js';
 import { createComicHistoryStore } from './src/comic/history.js';
 import { renderComicHistoryHtml } from './src/comic/history-view.js';
 import { createComicLightbox } from './src/comic/lightbox.js';
@@ -185,9 +191,6 @@ const {
     getSettings,
     getScopedProfileKey,
     saveSettings,
-    makeShareHtml,
-    extractImagePathsFromHtml,
-    getCommonImageFolder,
 });
 
 const { openComicLightbox } = createComicLightbox({ state, Popup, POPUP_TYPE });
@@ -216,7 +219,6 @@ const {
     cancelActiveGeneration,
     cleanupRenderedComics,
     getSettings,
-    makeShareHtml,
     notifyInfo: message => toastr.info(message, 'Comic Forge'),
     readDraftFromModal,
     regeneratePreviewPanel,
@@ -3070,37 +3072,6 @@ function findLastCharacterMessageId(chat) {
     }
     return chat.length - 1;
 }
-function makeShareHtml(html) {
-    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-    doc.querySelectorAll('[data-bbcf-instruction]').forEach(node => {
-        if (!node.classList.contains('bbcf-panel-error')) node.removeAttribute('data-bbcf-instruction');
-    });
-    doc.querySelectorAll('.bbcf-export-notice').forEach(node => node.remove());
-    doc.querySelectorAll('.bbcf-panel-action').forEach(node => node.remove());
-    doc.querySelectorAll('.bbcf-comic-action').forEach(node => node.remove());
-    doc.querySelectorAll('.bbcf-comic-title span').forEach(span => {
-        const text = span.textContent?.trim() || '';
-        if (/^(?:single image|\d+\s+panels?)$/i.test(text)) span.remove();
-    });
-    return doc.body.innerHTML.trim();
-}
-
-function extractImagePathsFromHtml(html) {
-    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-    return Array.from(doc.querySelectorAll('img'))
-        .map(img => img.getAttribute('src') || '')
-        .filter(Boolean);
-}
-
-function getCommonImageFolder(paths) {
-    if (!paths?.length) return '';
-    const first = String(paths[0] || '');
-    const slash = first.lastIndexOf('/');
-    if (slash === -1) return '';
-    const folder = first.slice(0, slash);
-    return paths.every(path => String(path || '').startsWith(`${folder}/`)) ? folder : '';
-}
-
 function getRecentChatImagePaths(count = getSettings().previousImageCount) {
     const max = clampInt(count, 0, MAX_PREVIOUS_CONTEXT_IMAGES, 0);
     if (!max) return [];
@@ -3617,28 +3588,6 @@ function downloadTextFile(filename, text) {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function buildStandaloneComicDocument(record) {
-    return `<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(record.title || 'Comic page')}</title>
-</head>
-<body>
-${record.html || ''}
-</body>
-</html>`;
-}
-
-function safeFilename(value) {
-    return String(value || 'comic')
-        .trim()
-        .replace(/[\\/:*?"<>|]+/g, '_')
-        .replace(/\s+/g, '_')
-        .slice(0, 80) || 'comic';
 }
 
 async function saveCurrentChat(context = SillyTavern.getContext()) {

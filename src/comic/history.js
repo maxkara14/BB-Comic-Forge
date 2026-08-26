@@ -1,5 +1,6 @@
 import { MAX_COMIC_HISTORY } from '../core/constants.js';
 import { makeId } from '../core/id.js';
+import { extractImagePathsFromHtml, getCommonImageFolder, makeShareHtml } from './artifacts.js';
 
 export function createComicHistoryStore(dependencies) {
     const {
@@ -7,9 +8,6 @@ export function createComicHistoryStore(dependencies) {
         getSettings,
         getScopedProfileKey,
         saveSettings,
-        makeShareHtml,
-        extractImagePathsFromHtml,
-        getCommonImageFolder,
     } = dependencies;
 
     function rememberComic(draft, html, options = {}) {

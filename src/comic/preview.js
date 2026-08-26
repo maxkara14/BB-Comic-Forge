@@ -1,3 +1,5 @@
+import { makeShareHtml } from './artifacts.js';
+
 export function createComicPreviewController(dependencies) {
     const {
         state,
@@ -5,7 +7,6 @@ export function createComicPreviewController(dependencies) {
         cancelActiveGeneration,
         cleanupRenderedComics,
         getSettings,
-        makeShareHtml,
         notifyInfo,
         readDraftFromModal,
         regeneratePreviewPanel,
