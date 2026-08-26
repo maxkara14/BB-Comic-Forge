@@ -16,7 +16,6 @@ import {
     DRAFT_SYNC_SELECTORS,
     FAB_ID,
     FAB_WRAPPER_ID,
-    MAX_COMIC_HISTORY,
     MAX_CONCURRENCY,
     MAX_PANELS,
     MAX_PREVIOUS_CONTEXT_IMAGES,
@@ -35,6 +34,8 @@ import {
     splitLines,
 } from './src/comic/syntax.js';
 import { createPanelPlans, createSinglePagePanel } from './src/comic/planner.js';
+import { createComicHistoryStore } from './src/comic/history.js';
+import { renderComicHistoryHtml } from './src/comic/history-view.js';
 import {
     buildComicHtml,
     buildPanelHtml,
@@ -170,6 +171,21 @@ const {
 } = createReferenceService({
     getSettings,
     getWardrobeActiveEntries,
+});
+
+const {
+    getActiveComicRecord,
+    getScopedComicHistory,
+    isComicRecordForCurrentScope,
+    rememberComic,
+} = createComicHistoryStore({
+    state,
+    getSettings,
+    getScopedProfileKey,
+    saveSettings,
+    makeShareHtml,
+    extractImagePathsFromHtml,
+    getCommonImageFolder,
 });
 
 const generateProviderImage = createImageProviderGenerator({
@@ -3018,62 +3034,6 @@ function findLastCharacterMessageId(chat) {
     }
     return chat.length - 1;
 }
-
-function rememberComic(draft, html, options = {}) {
-    const settings = getSettings();
-    const profileKey = getScopedProfileKey();
-    const cleanHtml = makeShareHtml(html);
-    const imagePaths = extractImagePathsFromHtml(cleanHtml);
-    const {
-        historyId = '',
-        messageId = null,
-        savedPngPath = '',
-        source = '',
-    } = options && typeof options === 'object' ? options : { messageId: options };
-    const existingHistory = Array.isArray(settings.comicHistory) ? settings.comicHistory : [];
-    const existing = historyId ? existingHistory.find(record => record?.id === historyId) : null;
-    const nextSavedPngPath = savedPngPath || existing?.savedPngPath || '';
-    const nextMessageId = messageId ?? existing?.messageId ?? null;
-    const record = {
-        id: existing?.id || historyId || makeId('bbcf-comic'),
-        profileKey,
-        title: String(draft.title || existing?.title || 'Comic page'),
-        createdAt: existing?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        mode: draft.generationMode || draft.mode || existing?.mode || settings.generationMode,
-        layout: draft.layout || existing?.layout || settings.layout,
-        imagePaths,
-        imageFolder: getCommonImageFolder(imagePaths),
-        html: cleanHtml,
-        messageId: nextMessageId,
-        savedPngPath: nextSavedPngPath,
-        source: getComicHistorySource({ ...existing, messageId: nextMessageId, savedPngPath: nextSavedPngPath, source }),
-    };
-    settings.comicHistory = [record, ...existingHistory.filter(item => item?.id !== record.id)].slice(0, MAX_COMIC_HISTORY);
-    state.lastComic = record;
-    saveSettings();
-    return record;
-}
-
-function getComicHistorySource(record) {
-    if (record?.messageId !== null && record?.messageId !== undefined && record?.savedPngPath) return 'chat-png';
-    if (record?.messageId !== null && record?.messageId !== undefined) return 'chat';
-    if (record?.savedPngPath) return 'png';
-    return record?.source || 'saved';
-}
-
-function getComicHistorySourceLabel(record) {
-    const source = getComicHistorySource(record);
-    if (source === 'chat-png') return 'Чат + PNG';
-    if (source === 'chat') return 'Чат';
-    if (source === 'png') return 'PNG';
-    return 'Сохранено';
-}
-
-function getComicHistoryThumbnail(record) {
-    return record?.savedPngPath || record?.imagePaths?.[0] || '';
-}
-
 function makeShareHtml(html) {
     const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
     doc.querySelectorAll('[data-bbcf-instruction]').forEach(node => {
@@ -3645,42 +3605,12 @@ async function regeneratePreviewPanel(root, panelNumber, button) {
         updateFloatingButton();
     }
 }
-
-function getActiveComicRecord() {
-    if (isComicRecordForCurrentScope(state.lastComic)) return state.lastComic;
-    return getScopedComicHistory()[0] || null;
-}
-
 function renderComicHistory(root) {
     const panel = root.querySelector('#bbcf-history-panel');
     if (!panel) return;
     const history = getScopedComicHistory();
-    if (!history.length) {
-        panel.innerHTML = '<p class="bbcf-hint">История пуста.</p>';
-        return;
-    }
-    panel.innerHTML = `
-        <div class="bbcf-history-header">
-            <b>Созданные комиксы</b>
-            <button class="menu_button" type="button" data-bbcf-history-clear><i class="fa-solid fa-trash-can"></i><span>Очистить</span></button>
-        </div>
-        ${history.map(record => {
-            const thumbnail = getComicHistoryThumbnail(record);
-            const sourceLabel = getComicHistorySourceLabel(record);
-            return `
-        <div class="bbcf-history-card" data-bbcf-history-id="${escapeHtml(record.id)}">
-            <div class="bbcf-history-thumb">${thumbnail ? `<img src="${escapeHtml(thumbnail)}" alt="">` : '<i class="fa-solid fa-image"></i>'}</div>
-            <div class="bbcf-history-main">
-                <b>${escapeHtml(record.title || 'Comic page')}</b>
-                <span>${escapeHtml(formatComicDate(record.createdAt))} · ${escapeHtml(record.mode === 'single' ? 'одним запросом' : 'по панелям')} · ${escapeHtml(sourceLabel)}</span>
-                <div class="bbcf-history-actions">
-                    <button class="menu_button" type="button" data-bbcf-history-preview><i class="fa-solid fa-eye"></i><span>Показать</span></button>
-                    <button class="menu_button" type="button" data-bbcf-history-delete><i class="fa-solid fa-trash-can"></i></button>
-                </div>
-            </div>
-        </div>
-    `;
-        }).join('')}`;
+    panel.innerHTML = renderComicHistoryHtml(history);
+    if (!history.length) return;
     panel.querySelector('[data-bbcf-history-clear]')?.addEventListener('click', () => {
         const settings = getSettings();
         const profileKey = getScopedProfileKey();
@@ -3733,21 +3663,6 @@ function renderComicHistory(root) {
         });
     });
 }
-
-function getScopedComicHistory(settings = getSettings()) {
-    return (settings.comicHistory || []).filter(isComicRecordForCurrentScope);
-}
-
-function isComicRecordForCurrentScope(record) {
-    return Boolean(record && record.profileKey && record.profileKey === getScopedProfileKey());
-}
-
-function formatComicDate(value) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleString();
-}
-
 async function copyText(text) {
     const value = String(text || '');
     if (navigator.clipboard?.writeText) {
