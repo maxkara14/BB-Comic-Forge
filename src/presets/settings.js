@@ -4,7 +4,6 @@ import { makeId } from '../core/id.js';
 import { clampInt } from '../core/numbers.js';
 import { getLayoutPresetById as resolveLayoutPresetById, getStylePresetById as resolveStylePresetById } from './resolvers.js';
 import {
-    buildActiveComicPresetHtml,
     buildPresetDetailsHtml,
     buildPresetLibraryCardsHtml,
     buildPresetLibraryHtml,
@@ -57,10 +56,6 @@ export function createPresetSettingsController(dependencies) {
         const settings = getSettings();
         const settingsRoot = document.getElementById(SETTINGS_ID);
         const modalRoot = state.modal?.isConnected ? state.modal : null;
-        for (const root of [settingsRoot, modalRoot].filter(Boolean)) {
-            const card = root.querySelector('[data-bbcf-active-preset-card]');
-            if (card) card.innerHTML = buildActiveComicPresetHtml(settings);
-        }
         refreshSettingsDashboard(settingsRoot);
         refreshForgeWorkflowSummary(modalRoot);
     }
@@ -427,14 +422,10 @@ export function createPresetSettingsController(dependencies) {
         root.dataset.bbcfPresetLibraryBound = '1';
         root.addEventListener('click', async event => {
             const openButton = event.target.closest?.('[data-bbcf-open-preset-library]');
-            const quickAction = event.target.closest?.('[data-bbcf-preset-quick-action]')?.dataset.bbcfPresetQuickAction;
-            if (!openButton && !quickAction) return;
+            if (!openButton) return;
             event.preventDefault();
-            event.target.closest?.('details')?.removeAttribute('open');
             try {
-                if (openButton) await openPresetLibrary(root, source);
-                else if (quickAction === 'create') await createDraftPromptPresetFromCurrent(root, { source });
-                else if (quickAction === 'export') exportPortablePreset(root, source);
+                await openPresetLibrary(root, source);
             } catch (error) {
                 reportPresetError('preset action failed', error);
             }

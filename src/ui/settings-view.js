@@ -1,5 +1,4 @@
 import { MAX_CONCURRENCY, MAX_PANELS, MAX_PREVIOUS_CONTEXT_IMAGES } from '../core/constants.js';
-import { buildActiveComicPresetHtml } from '../presets/library-view.js';
 import { buildLayoutExamplesHtml, buildLayoutOptionsHtml, buildStyleExamplesHtml, buildStyleOptionsHtml } from '../presets/view.js';
 import {
     buildDraftConnectionProfileOptionsHtml,
@@ -31,7 +30,10 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                             <span class="bbcf-eyebrow">Быстрый запуск</span>
                             <h4 class="bbcf-section-title"><i class="fa-solid fa-wand-magic-sparkles"></i><span data-bbcf-dashboard-heading>Готово к работе</span></h4>
                         </div>
-                        <label class="bbcf-toggle-pill"><input type="checkbox" id="bbcf-enabled" ${settings.enabled ? 'checked' : ''}><span data-bbcf-enabled-label>${settings.enabled ? 'Включено' : 'Выключено'}</span></label>
+                        <div class="bbcf-dashboard-heading-actions">
+                            <button class="menu_button bbcf-dashboard-presets" type="button" data-bbcf-open-preset-library><i class="fa-solid fa-palette"></i><span>Пресеты</span></button>
+                            <label class="bbcf-toggle-pill"><input type="checkbox" id="bbcf-enabled" ${settings.enabled ? 'checked' : ''}><span data-bbcf-enabled-label>${settings.enabled ? 'Включено' : 'Выключено'}</span></label>
+                        </div>
                     </div>
                     <div class="bbcf-dashboard-grid">
                         <button class="bbcf-dashboard-card" type="button" data-bbcf-dashboard-card="images" data-bbcf-open-settings="bbcf-image-settings">
@@ -349,7 +351,6 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                         </div>
                         <button class="menu_button" type="button" id="bbcf-save-layout"><i class="fa-solid fa-table-cells-large"></i><span>Сохранить макет</span></button>
                     </details>
-                    <div data-bbcf-active-preset-card>${buildActiveComicPresetHtml(settings)}</div>
                     <div class="bbcf-field">
                         <label for="bbcf-custom-style">Дополнительные инструкции к генерации</label>
                         <textarea id="bbcf-custom-style" class="text_pole" rows="3" placeholder="Разовые правки поверх выбранного стиля: свет, ракурс, темп, материалы.">${escapeHtml(settings.customPrompt)}</textarea>

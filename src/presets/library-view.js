@@ -1,38 +1,6 @@
 // The library keeps preset discovery separate from the generation form so the primary workflow stays compact.
-import { getActiveDraftPromptPreset } from '../draft/view.js';
 import { escapeHtml } from '../ui/html.js';
 import { getLayoutPresetById, getStylePresetById } from './resolvers.js';
-
-export function buildActiveComicPresetHtml(settings) {
-    const preset = getActiveDraftPromptPreset(settings);
-    const style = preset ? getStylePresetById(preset.stylePreset, settings) : getStylePresetById(settings.stylePreset, settings);
-    const layout = preset ? getLayoutPresetById(preset.layout, settings) : getLayoutPresetById(settings.layout, settings);
-    const title = preset?.label || 'Текущие настройки';
-    const status = preset
-        ? `${preset.importedAt ? 'Импортированный' : 'Мой пресет'} · ${modeLabel(preset.generationMode)} · ${panelLabel(preset.panelCount)}`
-        : 'Пресет не выбран · используется текущая конфигурация';
-    const details = [style?.label, layout?.label || layout?.id, preset?.recommendations?.model].filter(Boolean).join(' · ');
-    return `
-        <div class="bbcf-active-preset-card${preset ? ' is-selected' : ''}">
-            <span class="bbcf-active-preset-icon"><i class="fa-solid fa-palette"></i></span>
-            <span class="bbcf-active-preset-copy">
-                <strong>${escapeHtml(title)}</strong>
-                <small>${escapeHtml(status)}</small>
-                ${details ? `<small class="bbcf-muted">${escapeHtml(details)}</small>` : ''}
-            </span>
-            <div class="bbcf-active-preset-actions">
-                <button class="menu_button bbcf-primary" type="button" data-bbcf-open-preset-library><i class="fa-solid fa-layer-group"></i><span>Библиотека</span></button>
-                <details class="bbcf-preset-action-menu">
-                    <summary class="menu_button" title="Действия с пресетом" aria-label="Действия с пресетом"><i class="fa-solid fa-ellipsis"></i></summary>
-                    <div class="bbcf-preset-action-popover">
-                        <button type="button" data-bbcf-preset-quick-action="create"><i class="fa-solid fa-bookmark"></i><span>Сохранить текущие</span></button>
-                        <button type="button" data-bbcf-preset-quick-action="export"><i class="fa-solid fa-file-export"></i><span>Экспортировать текущие</span></button>
-                    </div>
-                </details>
-            </div>
-        </div>
-    `;
-}
 
 export function buildPresetLibraryHtml(settings, { filter = 'all', query = '' } = {}) {
     return `
@@ -43,8 +11,8 @@ export function buildPresetLibraryHtml(settings, { filter = 'all', query = '' } 
                     <small>Готовый стиль, макет и правила генерации в одном наборе</small>
                 </span>
                 <div class="bbcf-preset-library-header-actions">
-                    <button class="menu_button" type="button" data-bbcf-library-create><i class="fa-solid fa-plus"></i><span>Создать из текущих</span></button>
-                    <button class="menu_button" type="button" data-bbcf-library-import><i class="fa-solid fa-file-import"></i><span>Импортировать</span></button>
+                    <button class="menu_button" type="button" data-bbcf-library-create title="Создать пресет из текущих настроек"><i class="fa-solid fa-plus"></i><span>Создать</span></button>
+                    <button class="menu_button" type="button" data-bbcf-library-import><i class="fa-solid fa-file-import"></i><span>Импорт</span></button>
                     <input type="file" data-bbcf-library-import-file accept=".json,.bbcf-preset.json,application/json" hidden>
                 </div>
             </header>
@@ -124,7 +92,7 @@ function buildPresetCardHtml(settings, preset) {
                     <strong>${escapeHtml(preset.label)}</strong>
                     <small>${imported ? 'Импортированный' : 'Мой пресет'}${preset.author ? ` · ${escapeHtml(preset.author)}` : ''}</small>
                 </span>
-                ${active ? '<span class="bbcf-preset-active-badge"><i class="fa-solid fa-check"></i> Активен</span>' : ''}
+                ${active ? '<span class="bbcf-preset-active-badge" title="Активный пресет"><i class="fa-solid fa-check"></i></span>' : ''}
             </div>
             <p>${escapeHtml(description)}</p>
             <div class="bbcf-preset-card-tags">
@@ -133,7 +101,7 @@ function buildPresetCardHtml(settings, preset) {
             </div>
             <div class="bbcf-preset-card-meta">
                 <span><i class="fa-solid fa-table-cells-large"></i> ${escapeHtml(panelLabel(preset.panelCount))}</span>
-                <span><i class="fa-solid fa-bolt"></i> ${escapeHtml(modeLabel(preset.generationMode))}</span>
+                <span><i class="fa-solid fa-bolt"></i> ${preset.generationMode === 'single' ? 'Экономно' : 'По панелям'}</span>
             </div>
             <footer>
                 <button class="menu_button bbcf-primary" type="button" data-bbcf-library-action="apply" data-preset-id="${escapeHtml(preset.id)}" ${active ? 'disabled' : ''}><i class="fa-solid fa-check"></i><span>${active ? 'Используется' : 'Использовать'}</span></button>

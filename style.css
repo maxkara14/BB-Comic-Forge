@@ -828,6 +828,12 @@
     color: #c8fbf6;
 }
 
+.bbcf-modal-presets {
+    border-color: rgba(255, 122, 182, 0.36);
+    background: linear-gradient(135deg, rgba(98, 214, 210, 0.12), rgba(255, 122, 182, 0.12));
+    color: #f3e8f1;
+}
+
 .bbcf-modal-dismiss {
     border-color: rgba(255, 104, 104, 0.42);
     background: rgba(255, 104, 104, 0.1);
@@ -1265,23 +1271,6 @@
     box-shadow: none !important;
 }
 
-.bbcf-active-preset-card {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 10px;
-    align-items: center;
-    margin: 8px 0 12px;
-    padding: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    background: linear-gradient(135deg, rgba(98, 214, 210, 0.08), rgba(255, 110, 174, 0.035));
-}
-
-.bbcf-active-preset-card.is-selected {
-    border-color: rgba(98, 214, 210, 0.3);
-}
-
-.bbcf-active-preset-icon,
 .bbcf-preset-card-icon {
     display: grid;
     place-items: center;
@@ -1298,20 +1287,6 @@
     background: rgba(255, 110, 174, 0.12);
 }
 
-.bbcf-active-preset-copy {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-}
-
-.bbcf-active-preset-copy strong,
-.bbcf-active-preset-copy small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.bbcf-active-preset-actions,
 .bbcf-preset-library-card footer {
     display: flex;
     gap: 6px;
@@ -1393,6 +1368,9 @@
 }
 
 .bbcf-preset-library-header > span > strong {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     color: #eef2f7;
     font-size: 1.14rem;
 }
@@ -1406,6 +1384,11 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+.bbcf-preset-library-header-actions .menu_button,
+.bbcf-preset-library-card .menu_button {
+    gap: 7px;
 }
 
 .bbcf-preset-library-filters {
@@ -1451,16 +1434,18 @@
 
 .bbcf-preset-library-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
-    gap: 12px;
-    align-items: start;
+    grid-template-columns: repeat(auto-fill, minmax(min(205px, 100%), 1fr));
+    gap: 10px;
+    align-items: stretch;
 }
 
 .bbcf-preset-library-card {
     position: relative;
     display: grid;
+    grid-template-rows: auto minmax(2.7em, 1fr) auto auto auto;
     gap: 10px;
     min-width: 0;
+    min-height: 218px;
     padding: 13px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
@@ -1510,12 +1495,14 @@
 }
 
 .bbcf-preset-active-badge {
-    padding: 4px 7px;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
     border-radius: 999px;
     color: #78e2bd;
     background: rgba(77, 210, 151, 0.11);
-    font-size: 0.76rem;
-    white-space: nowrap;
+    font-size: 0.72rem;
 }
 
 .bbcf-preset-card-tags,
@@ -1537,13 +1524,22 @@
 }
 
 .bbcf-preset-card-meta {
-    gap: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
     color: rgba(223, 231, 241, 0.66);
     font-size: 0.84rem;
 }
 
+.bbcf-preset-card-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
 .bbcf-preset-library-card footer {
-    margin-top: 2px;
+    margin-top: auto;
 }
 
 .bbcf-preset-library-card footer > .menu_button {
@@ -1676,26 +1672,18 @@
         min-width: 0;
     }
 
-    .bbcf-active-preset-card {
-        grid-template-columns: auto minmax(0, 1fr);
-    }
-
-    .bbcf-active-preset-actions {
-        grid-column: 1 / -1;
-    }
-
-    .bbcf-active-preset-actions > .menu_button {
-        flex: 1;
-        justify-content: center;
-    }
-
     .bbcf-preset-library-header-actions,
-    .bbcf-preset-library-header-actions .menu_button,
     .bbcf-preset-library-search {
         width: 100%;
     }
 
+    .bbcf-preset-library-header-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .bbcf-preset-library-header-actions .menu_button {
+        width: auto;
         justify-content: center;
     }
 
@@ -2649,6 +2637,23 @@ body.bbcf-lightbox-open {
     gap: 12px;
 }
 
+#bbcf-settings .bbcf-dashboard-heading-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 7px;
+}
+
+#bbcf-settings .bbcf-dashboard-presets {
+    gap: 7px;
+    padding: 6px 10px;
+    border-color: rgba(255, 122, 182, 0.3);
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(98, 214, 210, 0.11), rgba(255, 122, 182, 0.11));
+    color: #f3e8f1;
+    font-size: 0.76rem;
+}
+
 .bbcf-eyebrow {
     display: block;
     margin-bottom: 4px;
@@ -2675,6 +2680,21 @@ body.bbcf-lightbox-open {
 
 #bbcf-settings .bbcf-toggle-pill input {
     margin: 0;
+}
+
+@media (max-width: 420px) {
+    #bbcf-settings .bbcf-dashboard-heading {
+        flex-wrap: wrap;
+    }
+
+    #bbcf-settings .bbcf-dashboard-heading-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .bbcf-modal-presets span {
+        display: none;
+    }
 }
 
 #bbcf-settings .bbcf-dashboard-grid {

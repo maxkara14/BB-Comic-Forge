@@ -1,16 +1,18 @@
 import { MAX_PANELS } from '../core/constants.js';
-import { buildActiveComicPresetHtml } from '../presets/library-view.js';
+import { getActiveDraftPromptPreset } from '../draft/view.js';
 import { getStylePresetById } from '../presets/resolvers.js';
 import { buildLayoutExamplesHtml, buildLayoutOptionsHtml, buildStyleExamplesHtml, buildStyleOptionsHtml } from '../presets/view.js';
 import { escapeHtml, option } from './html.js';
 
 export function renderForgeHtml(settings, savedDraft) {
+    const activeDraftPromptPreset = getActiveDraftPromptPreset(settings);
     return `
         <div class="bbcf-modal-backdrop" data-bbcf-close></div>
         <div class="bbcf-modal" role="dialog" aria-modal="true">
             <header class="bbcf-modal-header">
                 <h3 class="bbcf-modal-title"><i class="fa-solid fa-book-open"></i> BB Comic Forge <span class="bbcf-muted">standalone</span></h3>
                 <div class="bbcf-modal-header-actions">
+                    <button class="bbcf-modal-action bbcf-modal-presets" type="button" title="Открыть библиотеку пресетов" data-bbcf-open-preset-library><i class="fa-solid fa-palette"></i><span>Пресеты</span></button>
                     <button class="bbcf-modal-action bbcf-modal-minimize" type="button" title="Свернуть кузницу, генерация продолжится" aria-label="Свернуть кузницу" id="bbcf-modal-minimize"><i class="fa-solid fa-window-minimize"></i><span>Свернуть</span></button>
                     <button class="bbcf-modal-action bbcf-modal-dismiss" type="button" title="Закрыть окно кузницы" aria-label="Закрыть кузницу" data-bbcf-close><i class="fa-solid fa-xmark"></i><span>Закрыть</span></button>
                 </div>
@@ -159,7 +161,6 @@ export function renderForgeHtml(settings, savedDraft) {
                             <span class="bbcf-workflow-heading"><strong>Тонкая настройка</strong><small id="bbcf-forge-tuning-summary"></small></span>
                         </summary>
                         <div class="bbcf-workflow-body">
-                    <div data-bbcf-active-preset-card>${buildActiveComicPresetHtml(settings)}</div>
                     <div class="bbcf-field">
                         <label for="bbcf-draft-custom-style">Дополнительные инструкции к генерации</label>
                         <textarea id="bbcf-draft-custom-style" class="text_pole" rows="3" placeholder="Разовые правки поверх выбранного стиля: свет, ракурс, темп, материалы.">${escapeHtml(savedDraft.customPrompt)}</textarea>
