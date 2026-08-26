@@ -9,7 +9,8 @@ export function buildModelOptionsHtml(settings) {
 
 export function getModelSuggestions(settings) {
     const stored = filterModelNamesForProvider(Array.isArray(settings.availableModels) ? settings.availableModels : [], settings.apiType);
-    return uniqueStrings([...stored, ...getKnownModelsForProvider(settings.apiType)]).slice(0, 120);
+    const suggestions = stored.length ? stored : getKnownModelsForProvider(settings.apiType);
+    return uniqueStrings([settings.model, ...suggestions]).slice(0, 120);
 }
 
 export function buildDraftModelOptionsHtml(settings) {

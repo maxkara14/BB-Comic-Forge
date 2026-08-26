@@ -458,6 +458,21 @@ export function createPresetSettingsController(dependencies) {
                 button.setAttribute('aria-pressed', String(active));
             });
         };
+        const positionActionMenu = menu => {
+            const summary = menu.querySelector(':scope > summary');
+            const popover = menu.querySelector(':scope > .bbcf-preset-action-popover');
+            if (!summary || !popover || !menu.open) return;
+            menu.classList.remove('opens-upward');
+            const boundary = popup.content.getBoundingClientRect();
+            const trigger = summary.getBoundingClientRect();
+            const requiredSpace = popover.scrollHeight + 8;
+            const spaceBelow = boundary.bottom - trigger.bottom;
+            const spaceAbove = trigger.top - boundary.top;
+            const opensUpward = spaceBelow < requiredSpace && spaceAbove > spaceBelow;
+            const availableSpace = opensUpward ? spaceAbove : spaceBelow;
+            menu.classList.toggle('opens-upward', opensUpward);
+            popover.style.setProperty('--bbcf-preset-menu-max-height', `${Math.max(120, Math.floor(availableSpace - 8))}px`);
+        };
         const refreshCards = () => {
             const grid = content.querySelector('.bbcf-preset-library-grid');
             if (grid) grid.innerHTML = buildPresetLibraryCardsHtml(getSettings(), { filter, query });
@@ -469,6 +484,19 @@ export function createPresetSettingsController(dependencies) {
             syncColumnButtons();
             updateLibraryLayout();
         };
+        content.addEventListener('toggle', event => {
+            const menu = event.target;
+            if (!menu.matches?.('.bbcf-preset-action-menu')) return;
+            if (!menu.open) {
+                menu.classList.remove('opens-upward');
+                menu.querySelector(':scope > .bbcf-preset-action-popover')?.style.removeProperty('--bbcf-preset-menu-max-height');
+                return;
+            }
+            content.querySelectorAll('.bbcf-preset-action-menu[open]').forEach(otherMenu => {
+                if (otherMenu !== menu) otherMenu.removeAttribute('open');
+            });
+            positionActionMenu(menu);
+        }, true);
         content.addEventListener('input', event => {
             if (!event.target.matches?.('[data-bbcf-library-search]')) return;
             query = event.target.value;
