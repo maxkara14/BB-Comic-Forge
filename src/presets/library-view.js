@@ -22,6 +22,12 @@ export function buildPresetLibraryHtml(settings, { filter = 'all', query = '' } 
                     ${filterButton('mine', 'Мои', filter)}
                     ${filterButton('imported', 'Импортированные', filter)}
                 </div>
+                <div class="bbcf-preset-library-columns" role="group" aria-label="Количество колонок">
+                    <i class="fa-solid fa-table-columns" title="Количество колонок"></i>
+                    ${columnButton(2, settings.presetLibraryColumns)}
+                    ${columnButton(4, settings.presetLibraryColumns)}
+                    ${columnButton(6, settings.presetLibraryColumns)}
+                </div>
                 <label class="bbcf-preset-library-search">
                     <i class="fa-solid fa-magnifying-glass"></i>
                     <input class="text_pole" type="search" data-bbcf-library-search value="${escapeHtml(query)}" placeholder="Поиск пресета">
@@ -123,6 +129,11 @@ function buildPresetCardHtml(settings, preset) {
 
 function filterButton(value, label, active) {
     return `<button type="button" class="${active === value ? 'is-active' : ''}" data-bbcf-library-filter="${value}" aria-pressed="${active === value}">${label}</button>`;
+}
+
+function columnButton(value, active) {
+    const selected = Number(active) === value;
+    return `<button type="button" class="${selected ? 'is-active' : ''}" data-bbcf-library-columns="${value}" aria-label="${value} колонки" aria-pressed="${selected}">${value}</button>`;
 }
 
 function menuAction(action, id, icon, label, danger = false) {

@@ -442,6 +442,29 @@ export function createPresetSettingsController(dependencies) {
             leftAlign: true,
             allowVerticalScrolling: true,
         });
+        const updateGridLayout = () => {
+            const grid = content.querySelector('.bbcf-preset-library-grid');
+            if (!grid) return;
+            const preferred = Number(getSettings().presetLibraryColumns) || DEFAULT_SETTINGS.presetLibraryColumns;
+            const availableWidth = grid.clientWidth;
+            if (!availableWidth) return;
+            const gap = 10;
+            const minimumCardWidth = 205;
+            const maximumCardWidth = preferred === 2 ? 300 : preferred === 4 ? 250 : 215;
+            const availableColumns = Math.max(1, Math.floor((availableWidth + gap) / (minimumCardWidth + gap)));
+            const visibleColumns = Math.min(preferred, availableColumns);
+            const cardWidth = Math.min(maximumCardWidth, Math.floor((availableWidth - gap * (visibleColumns - 1)) / visibleColumns));
+            grid.style.setProperty('--bbcf-preset-columns', String(visibleColumns));
+            grid.style.setProperty('--bbcf-preset-card-width', `${cardWidth}px`);
+        };
+        const syncColumnButtons = () => {
+            const columns = Number(getSettings().presetLibraryColumns) || DEFAULT_SETTINGS.presetLibraryColumns;
+            content.querySelectorAll('[data-bbcf-library-columns]').forEach(button => {
+                const active = Number(button.dataset.bbcfLibraryColumns) === columns;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', String(active));
+            });
+        };
         const refreshCards = () => {
             const grid = content.querySelector('.bbcf-preset-library-grid');
             if (grid) grid.innerHTML = buildPresetLibraryCardsHtml(getSettings(), { filter, query });
@@ -450,6 +473,8 @@ export function createPresetSettingsController(dependencies) {
                 button.classList.toggle('is-active', active);
                 button.setAttribute('aria-pressed', String(active));
             });
+            syncColumnButtons();
+            updateGridLayout();
         };
         content.addEventListener('input', event => {
             if (!event.target.matches?.('[data-bbcf-library-search]')) return;
@@ -478,6 +503,17 @@ export function createPresetSettingsController(dependencies) {
             }
         });
         content.addEventListener('click', async event => {
+            const columnsButton = event.target.closest?.('[data-bbcf-library-columns]');
+            if (columnsButton) {
+                const columns = Number(columnsButton.dataset.bbcfLibraryColumns);
+                if ([2, 4, 6].includes(columns)) {
+                    getSettings().presetLibraryColumns = columns;
+                    saveSettings();
+                    syncColumnButtons();
+                    updateGridLayout();
+                }
+                return;
+            }
             const filterButton = event.target.closest?.('[data-bbcf-library-filter]');
             if (filterButton) {
                 filter = filterButton.dataset.bbcfLibraryFilter || 'all';
@@ -530,7 +566,13 @@ export function createPresetSettingsController(dependencies) {
                 reportPresetError(`preset ${action} failed`, error);
             }
         });
-        await popup.show();
+        const resizeObserver = new ResizeObserver(updateGridLayout);
+        resizeObserver.observe(content);
+        try {
+            await popup.show();
+        } finally {
+            resizeObserver.disconnect();
+        }
     }
 
     async function showDraftPromptPresetDetails(presetId) {

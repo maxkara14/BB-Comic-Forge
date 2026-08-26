@@ -136,6 +136,7 @@ export const DEFAULT_SETTINGS = {
     activeDraftConnectionProfileId: '',
     draftPromptPresets: [],
     activeDraftPromptPresetId: '',
+    presetLibraryColumns: 2,
     references: [],
     referenceProfiles: {},
     activeReferenceProfileKey: '',

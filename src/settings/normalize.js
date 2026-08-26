@@ -98,6 +98,12 @@ export function normalizeBaseSettings(settings, getTavernProfileLabel = () => ''
     if (!settings.draftPromptPresets.some(preset => preset.id === settings.activeDraftPromptPresetId)) {
         settings.activeDraftPromptPresetId = '';
     }
+    if (![2, 4, 6].includes(Number(settings.presetLibraryColumns))) {
+        settings.presetLibraryColumns = DEFAULT_SETTINGS.presetLibraryColumns;
+        dirty = true;
+    } else {
+        settings.presetLibraryColumns = Number(settings.presetLibraryColumns);
+    }
     if (!OPENAI_IMAGE_SIZES.includes(settings.openaiSize)) settings.openaiSize = DEFAULT_SETTINGS.openaiSize;
     if (!OPENAI_IMAGE_QUALITIES.includes(settings.openaiQuality)) settings.openaiQuality = DEFAULT_SETTINGS.openaiQuality;
     if (!VALID_IMAGE_SIZES.includes(settings.imageSize)) settings.imageSize = DEFAULT_SETTINGS.imageSize;
