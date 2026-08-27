@@ -2982,17 +2982,12 @@ body.bbcf-lightbox-open {
     overflow: hidden;
     opacity: 0;
     pointer-events: none;
-    transform: translateY(-6px);
-    transform-origin: top center;
-    transition:
-        opacity 0.15s ease,
-        transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 0.15s ease;
 }
 
 .bbcf-disclosure[data-bbcf-expanded="true"] > .bbcf-disclosure-panel > .bbcf-disclosure-panel-inner {
     opacity: 1;
     pointer-events: auto;
-    transform: translateY(0);
 }
 
 #bbcf-settings .bbcf-disclosure.bbcf-section {
