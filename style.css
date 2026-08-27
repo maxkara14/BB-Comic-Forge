@@ -1338,6 +1338,10 @@
     bottom: calc(100% + 5px);
 }
 
+.bbcf-preset-action-menu.is-positioning > .bbcf-preset-action-popover {
+    visibility: hidden;
+}
+
 .bbcf-preset-action-popover button {
     display: flex;
     gap: 9px;
@@ -2408,13 +2412,13 @@ body.bbcf-lightbox-open {
 @media (max-width: 860px) {
     .bbcf-modal-root {
         padding: 8px;
-        width: auto;
-        height: auto;
-        place-items: stretch;
-        align-items: stretch;
+        width: 100%;
+        height: 100dvh;
+        place-items: center;
     }
 
     .bbcf-modal {
+        box-sizing: border-box;
         width: 100%;
         min-width: 0;
         margin: 0;

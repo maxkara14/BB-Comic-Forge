@@ -524,6 +524,23 @@ export function createPresetSettingsController(dependencies) {
             }
         });
         content.addEventListener('click', async event => {
+            const menuSummary = event.target.closest?.('.bbcf-preset-action-menu > summary');
+            if (menuSummary) {
+                event.preventDefault();
+                const menu = menuSummary.parentElement;
+                if (menu.open) {
+                    menu.removeAttribute('open');
+                } else {
+                    content.querySelectorAll('.bbcf-preset-action-menu[open]').forEach(otherMenu => {
+                        if (otherMenu !== menu) otherMenu.removeAttribute('open');
+                    });
+                    menu.classList.add('is-positioning');
+                    menu.setAttribute('open', '');
+                    positionActionMenu(menu);
+                    menu.classList.remove('is-positioning');
+                }
+                return;
+            }
             const columnsButton = event.target.closest?.('[data-bbcf-library-columns]');
             if (columnsButton) {
                 const columns = Number(columnsButton.dataset.bbcfLibraryColumns);
