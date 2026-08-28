@@ -7,7 +7,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "BruniikBron",
-    "version": "0.2.1",
+    "version": "2.0.0",
     "description": "Standalone comic page generator with per-panel image generation, custom API settings, layouts, bubbles, and panel regeneration.",
     "homePage": "",
     "auto_update": false
