@@ -88,7 +88,7 @@ export const DEFAULT_SETTINGS = {
     schemaVersion: 4,
     enabled: true,
     showFab: true,
-    apiType: 'onlysq-imagen',
+    apiType: 'openai-images',
     endpoint: '',
     apiKey: '',
     model: '',

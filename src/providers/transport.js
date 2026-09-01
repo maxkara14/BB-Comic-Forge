@@ -1,4 +1,3 @@
-import { ONLYSQ_IMAGEN_ENDPOINT } from '../core/constants.js';
 import { stripHtmlForError } from '../core/strings.js';
 
 export async function requestJson(url, options = {}, timeoutMs = 0) {
@@ -14,7 +13,7 @@ export async function requestJson(url, options = {}, timeoutMs = 0) {
         const response = await fetch(url, { ...fetchOptions, signal });
         const text = await response.text();
         if (!response.ok) {
-            const error = new Error(formatApiError(response.status, text, url));
+            const error = new Error(formatApiError(response.status, text));
             error.apiStatus = response.status;
             error.apiBody = text;
             throw error;
@@ -80,11 +79,8 @@ export function throwIfAborted(signal) {
     if (signal?.aborted) throw createCancellationError();
 }
 
-function formatApiError(status, body, url = '') {
+function formatApiError(status, body) {
     const message = stripHtmlForError(body).slice(0, 500) || 'empty response';
-    if (status === 404 && /api\.onlysq\.ru/i.test(url) && !/\/ai\/openai/i.test(url)) {
-        return `API 404: OnlySQ ImaGen должен идти в ${ONLYSQ_IMAGEN_ENDPOINT}, не в /ai/ как OpenAI Images. Сейчас запрос был: ${url}`;
-    }
     if (status === 429) return `API 429: лимит запросов или очередь провайдера. Подожди немного или снизь параллельность до 1. ${message}`;
     return `API ${status}: ${message}`;
 }

@@ -13,7 +13,6 @@ import {
     geminiApiHeaders,
     imageApiHeaders,
     normalizeGeminiModelsUrl,
-    normalizeOnlySqBase,
     normalizeOpenAiBase,
 } from './request.js';
 import {
@@ -51,7 +50,7 @@ export function createProviderSettingsController(dependencies) {
         if (!root) return;
         root.querySelectorAll('.bbcf-openai-row').forEach(node => node.classList.toggle('bbcf-hidden', settings.apiType !== 'openai-images'));
         root.querySelectorAll('.bbcf-naistera-row').forEach(node => node.classList.toggle('bbcf-hidden', settings.apiType !== 'naistera'));
-        root.querySelectorAll('.bbcf-image-size-row').forEach(node => node.classList.toggle('bbcf-hidden', ['openai-images', 'onlysq-imagen', 'naistera'].includes(settings.apiType)));
+        root.querySelectorAll('.bbcf-image-size-row').forEach(node => node.classList.toggle('bbcf-hidden', ['openai-images', 'naistera'].includes(settings.apiType)));
         const endpoint = root.querySelector('#bbcf-endpoint');
         if (endpoint) endpoint.placeholder = getEndpointPlaceholder(settings.apiType);
         const note = root.querySelector('#bbcf-provider-note');
@@ -387,13 +386,6 @@ export function createProviderSettingsController(dependencies) {
 
     async function fetchProviderModels(settings) {
         if (settings.apiType === 'naistera') return getKnownModelsForProvider('naistera');
-        if (settings.apiType === 'onlysq-imagen') {
-            const result = await fetchJson(`${normalizeOnlySqBase(settings.endpoint)}/models`, {
-                method: 'GET',
-                headers: imageApiHeaders(settings),
-            });
-            return extractModelNames(result, settings.apiType);
-        }
         if (settings.apiType.startsWith('openai')) {
             const result = await fetchJson(`${normalizeOpenAiBase(settings.endpoint)}/models`, {
                 method: 'GET',

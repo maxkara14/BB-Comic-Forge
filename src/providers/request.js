@@ -1,5 +1,3 @@
-import { ONLYSQ_IMAGEN_ENDPOINT } from '../core/constants.js';
-
 export function imageApiHeaders(settings) {
     return {
         'Authorization': `Bearer ${settings.apiKey || ''}`,
@@ -38,25 +36,8 @@ export function draftGeminiApiHeaders(endpoint, apiKey) {
 export function normalizeOpenAiBase(rawEndpoint) {
     let base = String(rawEndpoint || '').trim().replace(/\/+$/, '');
     base = base.replace(/\/(chat\/completions|images\/(?:generations|edits)|models)$/i, '');
-    if (/api\.onlysq\.ru\/ai\/openai(?:\/v\d+(?:\.\d+)?)?$/i.test(base)) {
-        return base.replace(/\/v\d+(?:\.\d+)?$/i, '');
-    }
     if (!/\/v\d+(?:\.\d+)?$/i.test(base)) base += '/v1';
     return base;
-}
-
-export function normalizeOnlySqImagenEndpoint(rawEndpoint) {
-    const raw = String(rawEndpoint || ONLYSQ_IMAGEN_ENDPOINT).trim() || ONLYSQ_IMAGEN_ENDPOINT;
-    let base = raw.replace(/\/+$/, '');
-    base = base.replace(/\/(openai|v1|v2|models|chat\/completions|images\/generations)$/i, '');
-    if (/\/imagen$/i.test(base)) return base;
-    if (/\/ai$/i.test(base)) return `${base}/imagen`;
-    if (/api\.onlysq\.ru$/i.test(base)) return `${base}/ai/imagen`;
-    return `${base}/ai/imagen`;
-}
-
-export function normalizeOnlySqBase(rawEndpoint) {
-    return normalizeOnlySqImagenEndpoint(rawEndpoint).replace(/\/imagen$/i, '');
 }
 
 export function normalizeGeminiGenerateUrl(rawEndpoint, model) {

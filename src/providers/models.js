@@ -1,7 +1,6 @@
 import { uniqueStrings } from '../core/strings.js';
 
 export function getKnownModelsForProvider(apiType) {
-    if (apiType === 'onlysq-imagen') return ['flux', 'grok'];
     if (apiType === 'openai-images') return ['gpt-image-1', 'dall-e-3', 'dall-e-2'];
     if (apiType === 'openai-chat') return ['gpt-image-1', 'grok-2-image', 'gemini-2.5-flash-image-preview', 'nano banana'];
     if (apiType === 'gemini') return ['gemini-2.5-flash-image-preview', 'gemini-2.0-flash-preview-image-generation'];
@@ -23,7 +22,10 @@ export function extractModelNames(payload, apiType) {
         }
         if (typeof value === 'object') {
             const candidate = value.id || value.name || value.model;
-            if (candidate) names.push(String(candidate).replace(/^models\//, ''));
+            if (candidate) {
+                names.push(String(candidate).replace(/^models\//, ''));
+                return;
+            }
             Object.values(value).forEach(visit);
         }
     };
@@ -33,10 +35,6 @@ export function extractModelNames(payload, apiType) {
 
 export function filterModelNamesForProvider(names, apiType) {
     const all = uniqueStrings(names);
-    if (apiType === 'onlysq-imagen') {
-        const imageModels = all.filter(model => /flux|grok|imagen|image/i.test(model));
-        return imageModels.length ? imageModels : getKnownModelsForProvider(apiType);
-    }
     if (apiType === 'openai-images') {
         const imageModels = all.filter(model => /gpt-image|dall|image|imagen|flux|sdxl|stable|midjourney/i.test(model));
         return imageModels.length ? imageModels : getKnownModelsForProvider(apiType);

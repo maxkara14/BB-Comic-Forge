@@ -5,35 +5,16 @@ import {
     imageApiHeaders,
     normalizeGeminiGenerateUrl,
     normalizeNaisteraEndpoint,
-    normalizeOnlySqImagenEndpoint,
     normalizeOpenAiBase,
 } from './request.js';
 import {
     extractImageFromChatResponse,
-    extractImageFromOnlySqResponse,
     parseImageDataUrl,
 } from './responses.js';
 import { throwIfAborted } from './transport.js';
 
 export function createImageProviderGenerator(dependencies) {
     const { getSettings, fetchJson, buildFullPrompt, buildReferenceInstruction } = dependencies;
-
-    async function generateOnlySqImage(panel, signal = null) {
-        const settings = getSettings();
-        const result = await fetchJson(normalizeOnlySqImagenEndpoint(settings.endpoint), {
-            method: 'POST',
-            headers: imageApiHeaders(settings),
-            signal,
-            body: JSON.stringify({
-                model: settings.model || 'flux',
-                prompt: buildFullPrompt(panel),
-                ratio: panel.aspectRatio || '1:1',
-            }),
-        });
-        const found = extractImageFromOnlySqResponse(result);
-        if (!found) throw new Error('OnlySQ response did not contain image data.');
-        return /^https?:\/\//i.test(found) ? fetchUrlAsDataUrl(found, signal) : found;
-    }
 
     async function generateOpenAiImage(panel, references = [], signal = null) {
         const settings = getSettings();
@@ -209,7 +190,6 @@ export function createImageProviderGenerator(dependencies) {
     }
 
     return function generateProviderImage(apiType, panel, references = [], signal = null) {
-        if (apiType === 'onlysq-imagen') return generateOnlySqImage(panel, signal);
         if (apiType === 'openai-images') return generateOpenAiImage(panel, references, signal);
         if (apiType === 'openai-chat') return generateOpenAiChatImage(panel, references, signal);
         if (apiType === 'gemini') return generateGeminiImage(panel, references, signal);

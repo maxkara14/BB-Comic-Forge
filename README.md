@@ -108,7 +108,6 @@ flowchart LR
 
 Поддерживаются:
 
-- **OnlySQ ImaGen**;
 - **Gemini / Nano Banana compatible** endpoint;
 - **OpenAI-compatible Chat Completions** с генерацией изображений;
 - **OpenAI Images** через `images/generations` и `images/edits`;
@@ -228,6 +227,4 @@ BBComicForge.generateFromDraft(draft)
 - 💬 [Telegram](https://t.me/Brun11kBr0n)
 - Workflow генерации изображений и референсов вдохновлён [sillyimages](https://github.com/0xl0cal/sillyimages) от 0xl0cal.
 - Идея гардероба, NPC-слотов и часть UX-подходов вдохновлены [SLAYimages](https://github.com/wewwaistyping/SLAYimages) от Wewwa; в экосистеме проекта также отмечены вклады hydall, aceeenvw и других авторов.
-- OnlySQ ImaGen подключён по публичной документации OnlySQ.
-
 Comic Forge не является форком sillyimages или SLAYimages и не требует их установки.

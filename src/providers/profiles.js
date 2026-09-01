@@ -74,7 +74,6 @@ export function getImageConnectionProfileFallbackLabel(profile = {}, apiType = D
 }
 
 export function getImageApiLabel(apiType) {
-    if (apiType === 'onlysq-imagen') return 'OnlySQ ImaGen';
     if (apiType === 'openai-images') return 'OpenAI Images';
     if (apiType === 'openai-chat') return 'OpenAI Chat Images';
     if (apiType === 'gemini') return 'Gemini';

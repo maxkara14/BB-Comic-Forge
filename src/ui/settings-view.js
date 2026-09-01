@@ -91,7 +91,6 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                     <div class="bbcf-row">
                         <label for="bbcf-api-type">Тип API</label>
                         <select id="bbcf-api-type" class="text_pole">
-                            <option value="onlysq-imagen" ${settings.apiType === 'onlysq-imagen' ? 'selected' : ''}>OnlySQ ImaGen</option>
                             <option value="gemini" ${settings.apiType === 'gemini' ? 'selected' : ''}>Gemini / Nano Banana</option>
                             <option value="openai-chat" ${settings.apiType === 'openai-chat' ? 'selected' : ''}>OpenAI chat.completions image</option>
                             <option value="openai-images" ${settings.apiType === 'openai-images' ? 'selected' : ''}>OpenAI images/generations</option>
@@ -182,7 +181,7 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                         </div>
                         <div class="bbcf-row">
                             <label for="bbcf-draft-connection-profile-name">Название профиля</label>
-                            <input id="bbcf-draft-connection-profile-name" class="text_pole" type="text" value="${escapeHtml(activeDraftConnectionProfile?.label || '')}" placeholder="Например: OnlySQ draft proxy">
+                            <input id="bbcf-draft-connection-profile-name" class="text_pole" type="text" value="${escapeHtml(activeDraftConnectionProfile?.label || '')}" placeholder="Например: OpenAI draft proxy">
                         </div>
                         <div class="bbcf-compact-actions">
                             <button class="menu_button" type="button" id="bbcf-save-draft-connection-profile"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>

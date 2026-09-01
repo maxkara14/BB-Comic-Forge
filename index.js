@@ -529,7 +529,7 @@ function getSettingsDashboardState(settings = getSettings()) {
     const imageNeedsModel = settings.apiType !== 'naistera';
     const imageReady = Boolean(settings.apiKey
         && (!imageNeedsModel || settings.model)
-        && (settings.endpoint || ['onlysq-imagen', 'naistera'].includes(settings.apiType)));
+        && (settings.endpoint || settings.apiType === 'naistera'));
     const selectedTavernDraftProfileExists = !settings.draftTavernProfileId
         || getSupportedTavernDraftProfiles().some(profile => profile.id === settings.draftTavernProfileId);
     const draftReady = settings.draftConnectionMode === 'sillytavern'
@@ -1159,7 +1159,7 @@ async function generatePanelComic(draft, plans, ui = {}) {
     const settings = getSettings();
     const generated = [];
     const cooldown = settings.requestCooldownMs || 0;
-    const providerCanReadImages = !['openai-images', 'onlysq-imagen'].includes(settings.apiType);
+    const providerCanReadImages = settings.apiType !== 'openai-images';
     const previousImageLimit = providerCanReadImages ? clampInt(settings.previousImageCount, 0, MAX_PREVIOUS_CONTEXT_IMAGES, 0) : 0;
     const chatContextPaths = getRecentChatImagePaths(previousImageLimit);
     const concurrency = clampInt(settings.concurrency, 1, MAX_CONCURRENCY, DEFAULT_SETTINGS.concurrency);
@@ -1204,7 +1204,7 @@ async function generatePanelComic(draft, plans, ui = {}) {
 
 async function generateSingleImageComic(draft, plans, ui = {}) {
     const settings = getSettings();
-    const providerCanReadImages = !['openai-images', 'onlysq-imagen'].includes(settings.apiType);
+    const providerCanReadImages = settings.apiType !== 'openai-images';
     const previousImageLimit = providerCanReadImages ? clampInt(settings.previousImageCount, 0, MAX_PREVIOUS_CONTEXT_IMAGES, 0) : 0;
     const panel = {
         ...buildSinglePagePanel(draft, plans),
@@ -1264,14 +1264,14 @@ async function generatePanelImage(panel, onStatus = null, signal = null) {
     const settings = getSettings();
     throwIfAborted(signal);
     if (typeof onStatus === 'function') onStatus('Запрос');
-    const references = settings.apiType === 'onlysq-imagen' ? [] : await collectReferenceImages(panel.previousImagePaths, signal);
+    const references = await collectReferenceImages(panel.previousImagePaths, signal);
     throwIfAborted(signal);
     return generateProviderImage(settings.apiType, panel, references, signal);
 }
 
 function validateGenerationSettings() {
     const settings = getSettings();
-    if (!settings.endpoint && !['naistera', 'onlysq-imagen'].includes(settings.apiType)) throw new Error('Endpoint не настроен.');
+    if (!settings.endpoint && settings.apiType !== 'naistera') throw new Error('Endpoint не настроен.');
     if (!settings.apiKey) throw new Error('API key не настроен.');
     if (settings.apiType !== 'naistera' && !settings.model) throw new Error('Модель не настроена.');
 }

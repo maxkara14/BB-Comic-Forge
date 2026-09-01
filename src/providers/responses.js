@@ -1,35 +1,3 @@
-export function extractImageFromOnlySqResponse(result) {
-    const fromValue = value => {
-        if (!value) return null;
-        if (typeof value === 'string') {
-            if (/^data:image\//i.test(value)) return value;
-            if (/^https?:\/\//i.test(value)) return value;
-            if (/^[A-Za-z0-9+/=\s]{120,}$/.test(value)) return `data:image/png;base64,${value.replace(/\s+/g, '')}`;
-            return null;
-        }
-        if (Array.isArray(value)) {
-            for (const item of value) {
-                const found = fromValue(item);
-                if (found) return found;
-            }
-            return null;
-        }
-        if (typeof value === 'object') {
-            return fromValue(value.b64_json)
-                || fromValue(value.base64)
-                || fromValue(value.data)
-                || fromValue(value.url)
-                || fromValue(value.image)
-                || fromValue(value.file)
-                || fromValue(value.files)
-                || fromValue(value.images)
-                || fromValue(value.output);
-        }
-        return null;
-    };
-    return fromValue(result?.files) || fromValue(result?.data) || fromValue(result);
-}
-
 export function extractImageFromChatResponse(result) {
     const message = result?.choices?.[0]?.message;
     if (message) {

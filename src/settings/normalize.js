@@ -37,9 +37,8 @@ export function normalizeBaseSettings(settings, getTavernProfileLabel = () => ''
     settings.wardrobeEnabled = settings.wardrobeEnabled !== false;
     settings.wardrobeSendDescription = settings.wardrobeSendDescription !== false;
     settings.wardrobeSendImages = settings.wardrobeSendImages !== false;
-    if (!IMAGE_API_TYPES.includes(settings.apiType)) settings.apiType = DEFAULT_SETTINGS.apiType;
-    if (settings.apiType === 'openai-images' && String(settings.endpoint || '').includes('api.onlysq.ru')) {
-        settings.apiType = 'onlysq-imagen';
+    if (!IMAGE_API_TYPES.includes(settings.apiType)) {
+        settings.apiType = DEFAULT_SETTINGS.apiType;
         dirty = true;
     }
     if (!Array.isArray(settings.availableModels)) {
@@ -47,10 +46,6 @@ export function normalizeBaseSettings(settings, getTavernProfileLabel = () => ''
         dirty = true;
     }
     settings.availableModels = filterModelNamesForProvider(settings.availableModels, settings.apiType);
-    if (settings.apiType === 'onlysq-imagen' && !settings.model) {
-        settings.model = 'flux';
-        dirty = true;
-    }
     settings.imageConnectionProfiles = normalizeImageConnectionProfiles(settings.imageConnectionProfiles);
     if (!settings.imageConnectionProfiles.some(profile => profile.id === settings.activeImageConnectionProfileId)) {
         settings.activeImageConnectionProfileId = '';

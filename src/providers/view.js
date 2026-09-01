@@ -1,4 +1,3 @@
-import { ONLYSQ_IMAGEN_ENDPOINT } from '../core/constants.js';
 import { uniqueStrings } from '../core/strings.js';
 import { escapeHtml, option } from '../ui/html.js';
 import { filterDraftModelNames, filterModelNamesForProvider, getKnownModelsForProvider } from './models.js';
@@ -48,7 +47,6 @@ export function getDraftModelPlaceholder(mode) {
 }
 
 export function getEndpointPlaceholder(apiType) {
-    if (apiType === 'onlysq-imagen') return ONLYSQ_IMAGEN_ENDPOINT;
     if (apiType === 'gemini') return 'https://generativelanguage.googleapis.com';
     if (apiType === 'openai-chat' || apiType === 'openai-images') return 'https://api.openai.com/v1';
     if (apiType === 'naistera') return 'https://naistera.org';
@@ -62,7 +60,6 @@ export function getDraftEndpointPlaceholder(mode) {
 }
 
 export function getProviderNote(apiType) {
-    if (apiType === 'onlysq-imagen') return 'OnlySQ ImaGen: быстрый режим через Flux и другие поддерживаемые модели. Обычно достаточно ключа и модели.';
     if (apiType === 'gemini') return 'Gemini хорошо подходит для референсов и образов. Gemini-compatible endpoint можно указывать базой, например /compatible.';
     if (apiType === 'openai-images') return 'OpenAI Images: без референсов используется /images/generations. С включёнными референсами Comic Forge пробует /images/edits; если источник его не поддерживает, запрос повторяется без файлов — только с текстовыми описаниями референсов. Endpoint можно указывать как /v1 или просто базовый URL.';
     if (apiType === 'openai-chat') return 'OpenAI chat: режим для прокси, которые умеют возвращать изображения и читать референсы. OpenAI-compatible endpoint можно указывать базовым URL.';
