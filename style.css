@@ -3289,3 +3289,7 @@ body.bbcf-lightbox-open {
         padding: 10px;
     }
 }
+
+.bbcf-compact-actions.bbcf-image-profile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bbcf-image-profile-actions .menu_button { width: 100%; white-space: normal; overflow-wrap: break-word; }
+.bbcf-image-profile-actions .menu_button:last-child { grid-column: 1 / -1; }

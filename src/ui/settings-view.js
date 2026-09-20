@@ -83,9 +83,10 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                             <label for="bbcf-image-connection-profile-name">Название профиля</label>
                             <input id="bbcf-image-connection-profile-name" class="text_pole" type="text" value="${escapeHtml(activeImageConnectionProfile?.label || '')}" placeholder="Например: Nano Banana refs">
                         </div>
-                        <div class="bbcf-compact-actions">
-                            <button class="menu_button" type="button" id="bbcf-save-image-connection-profile"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>
-                            <button class="menu_button bbcf-danger" type="button" id="bbcf-delete-image-connection-profile" ${activeImageConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить</span></button>
+                        <div class="bbcf-compact-actions bbcf-image-profile-actions">
+                            <button class="menu_button" type="button" id="bbcf-save-image-connection-profile" ${activeImageConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-bookmark"></i><span>Обновить выбранный</span></button>
+                            <button class="menu_button" type="button" id="bbcf-new-image-connection-profile"><i class="fa-solid fa-plus"></i><span>Сохранить как новый…</span></button>
+                            <button class="menu_button bbcf-danger" type="button" id="bbcf-delete-image-connection-profile" ${activeImageConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить профиль…</span></button>
                         </div>
                     </div>
                     <div class="bbcf-row">
@@ -183,9 +184,10 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                             <label for="bbcf-draft-connection-profile-name">Название профиля</label>
                             <input id="bbcf-draft-connection-profile-name" class="text_pole" type="text" value="${escapeHtml(activeDraftConnectionProfile?.label || '')}" placeholder="Например: OpenAI draft proxy">
                         </div>
-                        <div class="bbcf-compact-actions">
-                            <button class="menu_button" type="button" id="bbcf-save-draft-connection-profile"><i class="fa-solid fa-bookmark"></i><span>Сохранить</span></button>
-                            <button class="menu_button bbcf-danger" type="button" id="bbcf-delete-draft-connection-profile" ${activeDraftConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить</span></button>
+                        <div class="bbcf-compact-actions bbcf-image-profile-actions">
+                            <button class="menu_button" type="button" id="bbcf-save-draft-connection-profile" ${activeDraftConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-bookmark"></i><span>Обновить выбранный</span></button>
+                            <button class="menu_button" type="button" id="bbcf-new-draft-connection-profile"><i class="fa-solid fa-plus"></i><span>Сохранить как новый…</span></button>
+                            <button class="menu_button bbcf-danger" type="button" id="bbcf-delete-draft-connection-profile" ${activeDraftConnectionProfile ? '' : 'disabled'}><i class="fa-solid fa-trash-can"></i><span>Удалить профиль…</span></button>
                         </div>
                     </div>
                     <div class="bbcf-grid-2">

@@ -68,6 +68,8 @@ export function createProviderSettingsController(dependencies) {
         if (name && document.activeElement !== name && (forceName || !name.value.trim())) name.value = active?.label || '';
         const deleteButton = root.querySelector('#bbcf-delete-image-connection-profile');
         if (deleteButton) deleteButton.disabled = !active;
+        const updateButton = root.querySelector('#bbcf-save-image-connection-profile');
+        if (updateButton) updateButton.disabled = !active;
     }
 
     function applyImageConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
@@ -90,11 +92,16 @@ export function createProviderSettingsController(dependencies) {
         notifySuccess('Профиль генерации картинок применён.');
     }
 
-    function saveImageConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    function saveImageConnectionProfile(root = document.getElementById(SETTINGS_ID), { asNew = false } = {}) {
         const settings = getSettings();
         const selectedId = settings.activeImageConnectionProfileId || String(root?.querySelector('#bbcf-image-connection-profile')?.value || '');
-        const existingIndex = settings.imageConnectionProfiles.findIndex(profile => profile.id === selectedId);
-        const label = String(root?.querySelector('#bbcf-image-connection-profile-name')?.value || '').trim()
+        const existingIndex = asNew ? -1 : settings.imageConnectionProfiles.findIndex(profile => profile.id === selectedId);
+        if (!asNew && existingIndex < 0) return;
+        const enteredName = asNew
+            ? window.prompt('Название нового профиля', String(root?.querySelector('#bbcf-image-connection-profile-name')?.value || ''))
+            : root?.querySelector('#bbcf-image-connection-profile-name')?.value;
+        if (asNew && !enteredName?.trim()) return;
+        const label = String(enteredName || '').trim()
             || (existingIndex >= 0 ? settings.imageConnectionProfiles[existingIndex].label : `Профиль картинок ${settings.imageConnectionProfiles.length + 1}`);
         const profile = {
             ...buildImageConnectionProfileSnapshot(settings),
@@ -194,6 +201,8 @@ export function createProviderSettingsController(dependencies) {
         if (name && document.activeElement !== name && (forceName || !name.value.trim())) name.value = active?.label || '';
         const deleteButton = root.querySelector('#bbcf-delete-draft-connection-profile');
         if (deleteButton) deleteButton.disabled = !active;
+        const updateButton = root.querySelector('#bbcf-save-draft-connection-profile');
+        if (updateButton) updateButton.disabled = !active;
     }
 
     function applyDraftConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
@@ -226,11 +235,16 @@ export function createProviderSettingsController(dependencies) {
         notifySuccess('Профиль подключения применён.');
     }
 
-    function saveDraftConnectionProfile(root = document.getElementById(SETTINGS_ID)) {
+    function saveDraftConnectionProfile(root = document.getElementById(SETTINGS_ID), { asNew = false } = {}) {
         const settings = getSettings();
         const selectedId = settings.activeDraftConnectionProfileId || String(root?.querySelector('#bbcf-draft-connection-profile')?.value || '');
-        const existingIndex = settings.draftConnectionProfiles.findIndex(profile => profile.id === selectedId);
-        const label = String(root?.querySelector('#bbcf-draft-connection-profile-name')?.value || '').trim()
+        const existingIndex = asNew ? -1 : settings.draftConnectionProfiles.findIndex(profile => profile.id === selectedId);
+        if (!asNew && existingIndex < 0) return;
+        const enteredName = asNew
+            ? window.prompt('Название нового профиля', String(root?.querySelector('#bbcf-draft-connection-profile-name')?.value || ''))
+            : root?.querySelector('#bbcf-draft-connection-profile-name')?.value;
+        if (asNew && !enteredName?.trim()) return;
+        const label = String(enteredName || '').trim()
             || (existingIndex >= 0 ? settings.draftConnectionProfiles[existingIndex].label : `Профиль черновика ${settings.draftConnectionProfiles.length + 1}`);
         const profile = {
             id: existingIndex >= 0 ? settings.draftConnectionProfiles[existingIndex].id : makeId('draft-connection'),

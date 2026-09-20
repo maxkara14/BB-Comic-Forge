@@ -608,9 +608,11 @@ function bindSettingsUi(root) {
     bindWardrobeRecoveryButtons(root);
     root.querySelector('#bbcf-image-connection-profile')?.addEventListener('change', () => applyImageConnectionProfile(root));
     root.querySelector('#bbcf-save-image-connection-profile')?.addEventListener('click', () => saveImageConnectionProfile(root));
+    root.querySelector('#bbcf-new-image-connection-profile')?.addEventListener('click', () => saveImageConnectionProfile(root, { asNew: true }));
     root.querySelector('#bbcf-delete-image-connection-profile')?.addEventListener('click', () => deleteImageConnectionProfile(root));
     root.querySelector('#bbcf-draft-connection-profile')?.addEventListener('change', () => applyDraftConnectionProfile(root));
     root.querySelector('#bbcf-save-draft-connection-profile')?.addEventListener('click', () => saveDraftConnectionProfile(root));
+    root.querySelector('#bbcf-new-draft-connection-profile')?.addEventListener('click', () => saveDraftConnectionProfile(root, { asNew: true }));
     root.querySelector('#bbcf-delete-draft-connection-profile')?.addEventListener('click', () => deleteDraftConnectionProfile(root));
     bindPresetLibraryActions(root, { source: 'settings' });
     bindPresetDeleteActions(root);
