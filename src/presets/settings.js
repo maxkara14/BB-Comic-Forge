@@ -79,9 +79,9 @@ export function createPresetSettingsController(dependencies) {
             setValueSilent(root, '#bbcf-draft-mode', preset.generationMode);
             setValueSilent(root, '#bbcf-draft-insert-mode', preset.insertMode);
             setValueSilent(root, '#bbcf-draft-count', preset.panelCount);
-            syncPresetUi({ styleValue: preset.stylePreset, layoutValue: preset.layout });
             setValueSilent(root, '#bbcf-draft-layout', preset.layout);
             setValueSilent(root, '#bbcf-draft-style', preset.stylePreset);
+            syncPresetUi({ styleValue: preset.stylePreset, layoutValue: preset.layout });
             if (!portableOnly) {
                 setValueSilent(root, '#bbcf-draft-lock', preset.characterLock);
                 setValueSilent(root, '#bbcf-draft-notes', preset.panelNotes);
@@ -245,12 +245,62 @@ export function createPresetSettingsController(dependencies) {
         const preset = settings.draftPromptPresets.find(item => item.id === selectedId);
         if (!preset) return false;
         if (!window.confirm(`Удалить набор черновика "${preset.label}"?`)) return;
+        const styleId = savedPresetId(preset.stylePreset);
+        const layoutId = savedPresetId(preset.layout);
+        const linkedStyle = styleId ? settings.savedStyles.find(item => item.id === styleId) : null;
+        const linkedLayout = layoutId ? settings.savedLayouts.find(item => item.id === layoutId) : null;
+        const otherPresets = settings.draftPromptPresets.filter(item => item.id !== selectedId);
+        const styleUsedElsewhere = linkedStyle && otherPresets.some(item => item.stylePreset === `saved:${styleId}`);
+        const layoutUsedElsewhere = linkedLayout && otherPresets.some(item => item.layout === `saved:${layoutId}`);
+        const removable = [
+            linkedStyle && !styleUsedElsewhere ? `стиль "${linkedStyle.label}"` : '',
+            linkedLayout && !layoutUsedElsewhere ? `макет "${linkedLayout.label}"` : '',
+        ].filter(Boolean);
+        const removeLinked = removable.length > 0 && window.confirm(
+            `Удалить вместе с пресетом ${removable.join(' и ')}?\n\n` +
+            'Они больше не используются другими пресетами. При отказе останутся в библиотеке.',
+        );
         settings.draftPromptPresets = settings.draftPromptPresets.filter(item => item.id !== selectedId);
         if (settings.activeDraftPromptPresetId === selectedId) settings.activeDraftPromptPresetId = '';
+        if (removeLinked) {
+            if (styleId && linkedStyle && !styleUsedElsewhere) {
+                removeSavedStyleReferences(settings, styleId);
+                settings.savedStyles = settings.savedStyles.filter(item => item.id !== styleId);
+            }
+            if (layoutId && linkedLayout && !layoutUsedElsewhere) {
+                removeSavedLayoutReferences(settings, layoutId);
+                settings.savedLayouts = settings.savedLayouts.filter(item => item.id !== layoutId);
+            }
+        }
         saveSettings();
         syncDraftPromptPresetUi();
+        syncPresetUi();
+        saveDraftFromModal(state.modal);
         notifySuccess('Пресет удалён.');
         return true;
+    }
+
+    function savedPresetId(value) {
+        const match = /^saved:(.+)$/.exec(String(value || ''));
+        return match?.[1] || '';
+    }
+
+    function removeSavedStyleReferences(settings, id) {
+        const value = `saved:${id}`;
+        if (settings.stylePreset === value) settings.stylePreset = DEFAULT_SETTINGS.stylePreset;
+        if (settings.savedDraft?.stylePreset === value) settings.savedDraft.stylePreset = settings.stylePreset;
+        for (const draft of Object.values(settings.savedDraftProfiles || {})) {
+            if (draft?.stylePreset === value) draft.stylePreset = DEFAULT_SETTINGS.stylePreset;
+        }
+    }
+
+    function removeSavedLayoutReferences(settings, id) {
+        const value = `saved:${id}`;
+        if (settings.layout === value) settings.layout = DEFAULT_SETTINGS.layout;
+        if (settings.savedDraft?.layout === value) settings.savedDraft.layout = settings.layout;
+        for (const draft of Object.values(settings.savedDraftProfiles || {})) {
+            if (draft?.layout === value) draft.layout = DEFAULT_SETTINGS.layout;
+        }
     }
 
     function getStylePresetById(styleId, settings = getSettings()) {
@@ -289,8 +339,8 @@ export function createPresetSettingsController(dependencies) {
         const selectedLayout = getLayoutPresetById(layoutValue, settings) ? layoutValue : settings.layout;
         updateSelectOptions(settingsRoot?.querySelector('#bbcf-style-preset'), buildStyleOptionsHtml(settings, selectedStyle), selectedStyle);
         updateSelectOptions(settingsRoot?.querySelector('#bbcf-layout'), buildLayoutOptionsHtml(settings, selectedLayout), selectedLayout);
-        const draftStyle = getStylePresetById(valueOf(draftRoot, '#bbcf-draft-style'), settings) ? valueOf(draftRoot, '#bbcf-draft-style') : selectedStyle;
-        const draftLayout = getLayoutPresetById(valueOf(draftRoot, '#bbcf-draft-layout'), settings) ? valueOf(draftRoot, '#bbcf-draft-layout') : selectedLayout;
+        const draftStyle = styleValue !== null ? selectedStyle : (getStylePresetById(valueOf(draftRoot, '#bbcf-draft-style'), settings) ? valueOf(draftRoot, '#bbcf-draft-style') : selectedStyle);
+        const draftLayout = layoutValue !== null ? selectedLayout : (getLayoutPresetById(valueOf(draftRoot, '#bbcf-draft-layout'), settings) ? valueOf(draftRoot, '#bbcf-draft-layout') : selectedLayout);
         updateSelectOptions(draftRoot?.querySelector('#bbcf-draft-style'), buildStyleOptionsHtml(settings, draftStyle), draftStyle);
         updateSelectOptions(draftRoot?.querySelector('#bbcf-draft-layout'), buildLayoutOptionsHtml(settings, draftLayout), draftLayout);
         for (const root of [settingsRoot, draftRoot].filter(Boolean)) {
@@ -307,16 +357,19 @@ export function createPresetSettingsController(dependencies) {
         const settings = getSettings();
         const style = settings.savedStyles.find(item => item.id === savedId);
         if (!style) return;
-        if (!window.confirm(`Удалить сохраненный стиль "${style.label}"?`)) return;
+        const linkedPresets = settings.draftPromptPresets.filter(item => item.stylePreset === `saved:${savedId}`);
+        const usageNote = linkedPresetUsageNote(linkedPresets);
+        const message = usageNote
+            ? `\u0421\u0442\u0438\u043b\u044c "${style.label}" \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u0432 \u043f\u0440\u0435\u0441\u0435\u0442\u0430\u0445:\n${usageNote}\n\n\u041f\u043e\u0441\u043b\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u0438\u044f \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0441\u0435\u0442\u044b \u043f\u0435\u0440\u0435\u0439\u0434\u0443\u0442 \u043d\u0430 \u0441\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u0441\u0442\u0438\u043b\u044c. \u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u0442\u0438\u043b\u044c?`
+            : `\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043d\u044b\u0439 \u0441\u0442\u0438\u043b\u044c "${style.label}"?`;
+        if (!window.confirm(message)) return;
         settings.savedStyles = settings.savedStyles.filter(item => item.id !== savedId);
-        const deletedValue = `saved:${savedId}`;
-        if (settings.stylePreset === deletedValue) settings.stylePreset = DEFAULT_SETTINGS.stylePreset;
-        if (settings.savedDraft?.stylePreset === deletedValue) settings.savedDraft.stylePreset = settings.stylePreset;
-        if (settings.savedDraft) settings.savedDraftProfiles[getSavedDraftProfileKey()] = structuredClone(settings.savedDraft);
+        replaceDraftPresetStyleReferences(settings, savedId);
+        removeSavedStyleReferences(settings, savedId);
         saveSettings();
         syncPresetUi();
         saveDraftFromModal(state.modal);
-        notifySuccess('Стиль удален.');
+        notifySuccess('\u0421\u0442\u0438\u043b\u044c \u0443\u0434\u0430\u043b\u0451\u043d.');
     }
 
     function deleteSavedLayout(id) {
@@ -325,16 +378,40 @@ export function createPresetSettingsController(dependencies) {
         const settings = getSettings();
         const layout = settings.savedLayouts.find(item => item.id === savedId);
         if (!layout) return;
-        if (!window.confirm(`Удалить сохраненный макет "${layout.label}"?`)) return;
+        const linkedPresets = settings.draftPromptPresets.filter(item => item.layout === `saved:${savedId}`);
+        const usageNote = linkedPresetUsageNote(linkedPresets);
+        const message = usageNote
+            ? `\u041c\u0430\u043a\u0435\u0442 "${layout.label}" \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u0432 \u043f\u0440\u0435\u0441\u0435\u0442\u0430\u0445:\n${usageNote}\n\n\u041f\u043e\u0441\u043b\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u0438\u044f \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0441\u0435\u0442\u044b \u043f\u0435\u0440\u0435\u0439\u0434\u0443\u0442 \u043d\u0430 \u0441\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u043c\u0430\u043a\u0435\u0442. \u0423\u0434\u0430\u043b\u0438\u0442\u044c \u043c\u0430\u043a\u0435\u0442?`
+            : `\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043d\u044b\u0439 \u043c\u0430\u043a\u0435\u0442 "${layout.label}"?`;
+        if (!window.confirm(message)) return;
         settings.savedLayouts = settings.savedLayouts.filter(item => item.id !== savedId);
-        const deletedValue = `saved:${savedId}`;
-        if (settings.layout === deletedValue) settings.layout = DEFAULT_SETTINGS.layout;
-        if (settings.savedDraft?.layout === deletedValue) settings.savedDraft.layout = settings.layout;
-        if (settings.savedDraft) settings.savedDraftProfiles[getSavedDraftProfileKey()] = structuredClone(settings.savedDraft);
+        replaceDraftPresetLayoutReferences(settings, savedId);
+        removeSavedLayoutReferences(settings, savedId);
         saveSettings();
         syncPresetUi();
         saveDraftFromModal(state.modal);
-        notifySuccess('Макет удален.');
+        notifySuccess('\u041c\u0430\u043a\u0435\u0442 \u0443\u0434\u0430\u043b\u0451\u043d.');
+    }
+
+    function linkedPresetUsageNote(presets) {
+        if (!presets.length) return '';
+        const names = presets.slice(0, 5).map(item => `\u2022 ${item.label}`).join('\n');
+        const remainder = presets.length - 5;
+        return remainder > 0 ? `${names}\n\u2022 \u0438 \u0435\u0449\u0451 ${remainder}` : names;
+    }
+
+    function replaceDraftPresetStyleReferences(settings, id) {
+        const value = `saved:${id}`;
+        for (const preset of settings.draftPromptPresets) {
+            if (preset.stylePreset === value) preset.stylePreset = DEFAULT_SETTINGS.stylePreset;
+        }
+    }
+
+    function replaceDraftPresetLayoutReferences(settings, id) {
+        const value = `saved:${id}`;
+        for (const preset of settings.draftPromptPresets) {
+            if (preset.layout === value) preset.layout = DEFAULT_SETTINGS.layout;
+        }
     }
 
     function saveStyleFromSettings(root) {

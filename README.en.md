@@ -159,6 +159,8 @@ Portable files exclude API keys, endpoints, connection profiles, the current sce
 
 The library supports search, filters, preview, application, updating from current settings, renaming, duplication, export, and deletion. On desktop, choose 2, 4, or 6 library columns. On phones, the library temporarily uses one column without changing the saved preference.
 
+After applying a draft preset, the selected style and layout names are refreshed in the editor and settings summary. Deleting a draft preset can also remove its linked saved style and layout when no other draft preset uses them; shared entries remain in the library if you keep them.
+
 ## 🧠 Image prompt assembly
 
 **Image prompt** shows the text Comic Forge prepares for the model. Images do not appear there as base64; supported image files are attached to the request separately.

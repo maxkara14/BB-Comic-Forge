@@ -522,8 +522,9 @@ function getSettingsDashboardState(settings = getSettings()) {
     const imageProfile = getActiveImageConnectionProfile(settings);
     const draftProfile = getActiveDraftConnectionProfile(settings);
     const draftPreset = getActiveDraftPromptPreset(settings);
-    const style = getStylePresetById(settings.stylePreset, settings);
-    const layout = getLayoutPresetById(settings.layout, settings);
+    const activeDraft = getSavedDraft(settings);
+    const style = getStylePresetById(activeDraft.stylePreset, settings);
+    const layout = getLayoutPresetById(activeDraft.layout, settings);
     const enabledReferences = settings.references.filter(reference => reference.enabled && reference.path).length;
     const activeWardrobe = settings.wardrobeEnabled ? getWardrobeActiveEntries(settings).length : 0;
     const imageNeedsModel = settings.apiType !== 'naistera';
@@ -545,9 +546,9 @@ function getSettingsDashboardState(settings = getSettings()) {
         recipeTitle: draftPreset?.label || style?.label || 'Текущие настройки страницы',
         recipeMeta: [
             style?.label,
-            layout?.label || settings.layout,
-            `${settings.panelCount} пан.`,
-            settings.generationMode === 'single' ? 'экономно' : 'по панелям',
+            layout?.label || activeDraft.layout,
+            `${activeDraft.panelCount} пан.`,
+            activeDraft.generationMode === 'single' ? 'экономно' : 'по панелям',
         ].filter(Boolean).join(' · '),
         referenceTitle: enabledReferences || activeWardrobe ? `${enabledReferences} реф. · ${activeWardrobe} вещей` : 'Референсы не добавлены',
         referenceMeta: activeWardrobe ? 'Персонажи и активный гардероб' : 'Персонажи и гардероб',

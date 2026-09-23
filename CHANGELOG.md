@@ -12,6 +12,12 @@
 - Обновлена раскладка кнопок профилей; добавлены четыре регрессионных теста.
 - Добавлены английский README, переключение языка документации и этот changelog. Язык интерфейса расширения не менялся.
 
+### 2.0.1 — 2026-09-24
+
+- Исправлено обновление названий стиля и макета после применения набора черновика.
+- При удалении набора черновика можно отдельно удалить связанные сохранённые стиль и макет, если они больше не используются.
+- Перед удалением стиля или макета теперь показываются пресеты, которые на них ссылаются; после подтверждения такие ссылки заменяются стандартными значениями.
+
 ### 2026-09-02 — обслуживание провайдеров
 
 - Упорядочены модели провайдеров и удалён OnlySQ (`1220f8f`).
@@ -31,6 +37,12 @@
 - Update and delete are disabled without a selected profile. Deletion requires confirmation and preserves the active connection settings, including the draft's SillyTavern profile.
 - Updated profile button layout and added four regression tests.
 - Added an English README, documentation language links, and this changelog. The extension's interface language is unchanged.
+
+### 2.0.1 — 2026-09-24
+
+- Fixed stale style and layout names after applying a draft preset, including the settings dashboard summary.
+- Deleting a draft preset now offers to remove its linked saved style and layout when nothing else uses them.
+- Deleting a saved style or layout now lists the draft presets that use it and replaces those links with the default value after confirmation.
 
 ### 2026-09-02 — provider maintenance
 
