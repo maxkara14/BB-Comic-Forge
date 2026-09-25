@@ -4,19 +4,18 @@
 
 ## Русский
 
-### Unreleased
+### 2.0.1 — 2026-09-24
 
 - Разделены действия профилей подключений для изображений и AI-черновика: «Обновить выбранный», «Сохранить как новый…», «Удалить профиль…».
 - Создание нового профиля запрашивает имя и не перезаписывает выбранный. Отмена диалога не меняет сохранённые профили.
 - Обновление и удаление недоступны без выбранного профиля. Удаление требует подтверждения и сохраняет действующие параметры подключения, включая профиль SillyTavern для черновика.
 - Обновлена раскладка кнопок профилей; добавлены четыре регрессионных теста.
 - Добавлены английский README, переключение языка документации и этот changelog. Язык интерфейса расширения не менялся.
-
-### 2.0.1 — 2026-09-24
-
 - Исправлено обновление названий стиля и макета после применения набора черновика.
 - При удалении набора черновика можно отдельно удалить связанные сохранённые стиль и макет, если они больше не используются.
 - Перед удалением стиля или макета теперь показываются пресеты, которые на них ссылаются; после подтверждения такие ссылки заменяются стандартными значениями.
+- Удаление набора больше не предлагает удалить стиль или макет, если они используются в текущих настройках или сохранённых черновиках.
+- Подтверждение прямого удаления стиля или макета теперь показывает все затронутые настройки и черновики.
 
 ### 2026-09-02 — обслуживание провайдеров
 
@@ -26,23 +25,22 @@
 
 - Версия в manifest установлена в 2.0.0 (`834fdfe`).
 
-История начата с этого файла. Ранние изменения не реконструируются полностью; даты и ссылки на коммиты выше взяты из Git. Раздел Unreleased не означает публикацию новой версии или тега.
+История начата с этого файла. Ранние изменения не реконструируются полностью; даты и ссылки на коммиты выше взяты из Git.
 
 ## English
 
-### Unreleased
+### 2.0.1 — 2026-09-24
 
 - Separated image and AI-draft connection profile actions: **Update selected**, **Save as new…**, and **Delete profile…**.
 - Creating a profile asks for a name and keeps the selected profile intact. Cancelling the dialog leaves saved profiles unchanged.
 - Update and delete are disabled without a selected profile. Deletion requires confirmation and preserves the active connection settings, including the draft's SillyTavern profile.
 - Updated profile button layout and added four regression tests.
 - Added an English README, documentation language links, and this changelog. The extension's interface language is unchanged.
-
-### 2.0.1 — 2026-09-24
-
 - Fixed stale style and layout names after applying a draft preset, including the settings dashboard summary.
 - Deleting a draft preset now offers to remove its linked saved style and layout when nothing else uses them.
 - Deleting a saved style or layout now lists the draft presets that use it and replaces those links with the default value after confirmation.
+- Deleting a draft preset no longer offers to remove a style or layout used by current settings or saved drafts.
+- Direct style and layout deletion now shows every affected setting and saved draft in the confirmation.
 
 ### 2026-09-02 — provider maintenance
 
@@ -52,4 +50,4 @@
 
 - Set the manifest version to 2.0.0 (`834fdfe`).
 
-This file starts the maintained changelog. Earlier history is not reconstructed in full; the dates and commit references above come from Git. Unreleased does not imply a new version or tag has been published.
+This file starts the maintained changelog. Earlier history is not reconstructed in full; the dates and commit references above come from Git.

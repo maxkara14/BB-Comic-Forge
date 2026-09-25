@@ -29,6 +29,20 @@ const PORTABLE_DRAFT_FIELDS = [
     'negativePrompt',
 ];
 
+export function getSavedItemUsage(settings, field, value, excludedPresetId = '') {
+    const presets = settings.draftPromptPresets.filter(item => item.id !== excludedPresetId && item[field] === value);
+    const profileKeys = Object.entries(settings.savedDraftProfiles || {})
+        .filter(([, draft]) => draft?.[field] === value)
+        .map(([key]) => key);
+    const activeDraftOnly = settings.savedDraft?.[field] === value
+        && !profileKeys.includes(settings.activeSavedDraftProfileKey);
+    return {
+        presets,
+        currentSettings: settings[field] === value,
+        draftCount: profileKeys.length + Number(activeDraftOnly),
+    };
+}
+
 export function createPresetSettingsController(dependencies) {
     const {
         describeLayoutIntent,
@@ -249,16 +263,17 @@ export function createPresetSettingsController(dependencies) {
         const layoutId = savedPresetId(preset.layout);
         const linkedStyle = styleId ? settings.savedStyles.find(item => item.id === styleId) : null;
         const linkedLayout = layoutId ? settings.savedLayouts.find(item => item.id === layoutId) : null;
-        const otherPresets = settings.draftPromptPresets.filter(item => item.id !== selectedId);
-        const styleUsedElsewhere = linkedStyle && otherPresets.some(item => item.stylePreset === `saved:${styleId}`);
-        const layoutUsedElsewhere = linkedLayout && otherPresets.some(item => item.layout === `saved:${layoutId}`);
+        const styleUsage = linkedStyle && getSavedItemUsage(settings, 'stylePreset', `saved:${styleId}`, selectedId);
+        const layoutUsage = linkedLayout && getSavedItemUsage(settings, 'layout', `saved:${layoutId}`, selectedId);
+        const styleUsedElsewhere = styleUsage && hasSavedItemUsage(styleUsage);
+        const layoutUsedElsewhere = layoutUsage && hasSavedItemUsage(layoutUsage);
         const removable = [
             linkedStyle && !styleUsedElsewhere ? `стиль "${linkedStyle.label}"` : '',
             linkedLayout && !layoutUsedElsewhere ? `макет "${linkedLayout.label}"` : '',
         ].filter(Boolean);
         const removeLinked = removable.length > 0 && window.confirm(
             `Удалить вместе с пресетом ${removable.join(' и ')}?\n\n` +
-            'Они больше не используются другими пресетами. При отказе останутся в библиотеке.',
+            'Они не используются в других наборах, текущих настройках и сохранённых черновиках. При отказе останутся в библиотеке.',
         );
         settings.draftPromptPresets = settings.draftPromptPresets.filter(item => item.id !== selectedId);
         if (settings.activeDraftPromptPresetId === selectedId) settings.activeDraftPromptPresetId = '';
@@ -283,6 +298,18 @@ export function createPresetSettingsController(dependencies) {
     function savedPresetId(value) {
         const match = /^saved:(.+)$/.exec(String(value || ''));
         return match?.[1] || '';
+    }
+
+    function hasSavedItemUsage(usage) {
+        return usage.presets.length > 0 || usage.currentSettings || usage.draftCount > 0;
+    }
+
+    function savedItemUsageNote(usage) {
+        const parts = [];
+        if (usage.presets.length) parts.push(`наборы черновика:\n${linkedPresetUsageNote(usage.presets)}`);
+        if (usage.currentSettings) parts.push('текущие настройки страницы');
+        if (usage.draftCount) parts.push(`сохранённые черновики: ${usage.draftCount}`);
+        return parts.join('\n');
     }
 
     function removeSavedStyleReferences(settings, id) {
@@ -357,11 +384,10 @@ export function createPresetSettingsController(dependencies) {
         const settings = getSettings();
         const style = settings.savedStyles.find(item => item.id === savedId);
         if (!style) return;
-        const linkedPresets = settings.draftPromptPresets.filter(item => item.stylePreset === `saved:${savedId}`);
-        const usageNote = linkedPresetUsageNote(linkedPresets);
+        const usageNote = savedItemUsageNote(getSavedItemUsage(settings, 'stylePreset', `saved:${savedId}`));
         const message = usageNote
-            ? `\u0421\u0442\u0438\u043b\u044c "${style.label}" \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u0432 \u043f\u0440\u0435\u0441\u0435\u0442\u0430\u0445:\n${usageNote}\n\n\u041f\u043e\u0441\u043b\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u0438\u044f \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0441\u0435\u0442\u044b \u043f\u0435\u0440\u0435\u0439\u0434\u0443\u0442 \u043d\u0430 \u0441\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u0441\u0442\u0438\u043b\u044c. \u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u0442\u0438\u043b\u044c?`
-            : `\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043d\u044b\u0439 \u0441\u0442\u0438\u043b\u044c "${style.label}"?`;
+            ? `Стиль "${style.label}" используется:\n${usageNote}\n\nПосле удаления выбранный стиль изменится, а связанные наборы и черновики будут обновлены. Удалить стиль?`
+            : `Удалить сохранённый стиль "${style.label}"?`;
         if (!window.confirm(message)) return;
         settings.savedStyles = settings.savedStyles.filter(item => item.id !== savedId);
         replaceDraftPresetStyleReferences(settings, savedId);
@@ -378,11 +404,10 @@ export function createPresetSettingsController(dependencies) {
         const settings = getSettings();
         const layout = settings.savedLayouts.find(item => item.id === savedId);
         if (!layout) return;
-        const linkedPresets = settings.draftPromptPresets.filter(item => item.layout === `saved:${savedId}`);
-        const usageNote = linkedPresetUsageNote(linkedPresets);
+        const usageNote = savedItemUsageNote(getSavedItemUsage(settings, 'layout', `saved:${savedId}`));
         const message = usageNote
-            ? `\u041c\u0430\u043a\u0435\u0442 "${layout.label}" \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f \u0432 \u043f\u0440\u0435\u0441\u0435\u0442\u0430\u0445:\n${usageNote}\n\n\u041f\u043e\u0441\u043b\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u0438\u044f \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u044b\u0435 \u043f\u0440\u0435\u0441\u0435\u0442\u044b \u043f\u0435\u0440\u0435\u0439\u0434\u0443\u0442 \u043d\u0430 \u0441\u0442\u0430\u043d\u0434\u0430\u0440\u0442\u043d\u044b\u0439 \u043c\u0430\u043a\u0435\u0442. \u0423\u0434\u0430\u043b\u0438\u0442\u044c \u043c\u0430\u043a\u0435\u0442?`
-            : `\u0423\u0434\u0430\u043b\u0438\u0442\u044c \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043d\u044b\u0439 \u043c\u0430\u043a\u0435\u0442 "${layout.label}"?`;
+            ? `Макет "${layout.label}" используется:\n${usageNote}\n\nПосле удаления выбранный макет изменится, а связанные наборы и черновики будут обновлены. Удалить макет?`
+            : `Удалить сохранённый макет "${layout.label}"?`;
         if (!window.confirm(message)) return;
         settings.savedLayouts = settings.savedLayouts.filter(item => item.id !== savedId);
         replaceDraftPresetLayoutReferences(settings, savedId);
