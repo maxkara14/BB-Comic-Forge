@@ -95,6 +95,42 @@
     min-width: 0;
 }
 
+#bbcf-settings .bbcf-model-options {
+    max-height: 220px;
+    overflow-y: auto;
+    min-width: 0;
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    border-radius: 6px;
+    background: var(--SmartThemeBlurTintColor, #20242b);
+}
+
+#bbcf-settings .bbcf-model-options[hidden] {
+    display: none;
+}
+
+#bbcf-settings .bbcf-model-option {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    text-align: left;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+#bbcf-settings .bbcf-model-option:hover,
+#bbcf-settings .bbcf-model-option[aria-selected="true"] {
+    background: var(--SmartThemeQuoteColor, #446b70);
+}
+
+#bbcf-settings .bbcf-model-empty {
+    padding: 8px 10px;
+    overflow-wrap: anywhere;
+}
+
 #bbcf-settings .bbcf-ref-grid {
     display: grid;
     grid-template-columns: 1fr;

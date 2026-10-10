@@ -4,7 +4,6 @@ import {
     buildDraftConnectionProfileOptionsHtml,
     buildDraftModelOptionsHtml,
     buildImageConnectionProfileOptionsHtml,
-    buildModelOptionsHtml,
     getActiveDraftConnectionProfile,
     getActiveImageConnectionProfile,
     getDraftEndpointPlaceholder,
@@ -13,6 +12,7 @@ import {
 } from '../providers/view.js';
 import { buildReferenceSettingsHtml, buildWardrobeSummaryHtml } from '../wardrobe/view.js';
 import { escapeHtml, option } from './html.js';
+import { getImageQualityOptions } from '../providers/image-options.js';
 
 export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '' } = {}) {
     const activeImageConnectionProfile = getActiveImageConnectionProfile(settings);
@@ -109,13 +109,25 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                     <div class="bbcf-row bbcf-model-row">
                         <label for="bbcf-model">Модель</label>
                         <div class="bbcf-model-picker">
-                            <input id="bbcf-model" class="text_pole" type="text" list="bbcf-model-options" value="${escapeHtml(settings.model)}" placeholder="flux">
+                            <input id="bbcf-model" class="text_pole" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="bbcf-model-options" autocomplete="off" spellcheck="false" value="${escapeHtml(settings.model)}" placeholder="Название модели">
+                            <div id="bbcf-model-options" class="bbcf-model-options" role="listbox" aria-label="Модели подключения" hidden></div>
+                            <small>Поиск по названию · Enter — применить · Esc — отменить</small>
                             <button class="menu_button" type="button" id="bbcf-load-models"><i class="fa-solid fa-plug-circle-bolt"></i><span>Подключить</span></button>
                         </div>
-                        <datalist id="bbcf-model-options">${buildModelOptionsHtml(settings)}</datalist>
+                    </div>
+                    <div class="bbcf-row bbcf-openai-row">
+                        <label for="bbcf-image-parameter-mode">Параметры модели</label>
+                        <select id="bbcf-image-parameter-mode" class="text_pole">
+                            ${option('compatible', settings.openaiImageMode, 'Обычный OpenAI-compatible')}
+                            ${option('gpt-image', settings.openaiImageMode, 'GPT Image 1 / 1.5 / Mini')}
+                            ${option('gpt-image-2', settings.openaiImageMode, 'GPT Image 2')}
+                            ${option('gpt-image-2.5', settings.openaiImageMode, 'GPT Image 2.5 (Flare / Sunburst)')}
+                            ${option('grok', settings.openaiImageMode, 'Grok Imagine Image 2.0')}
+                        </select>
+                        <small>Выберите формат API модели. Для прокси режим задаётся вручную и сохраняется в профиле.</small>
                     </div>
                     <div class="bbcf-grid-2">
-                        <div class="bbcf-row bbcf-openai-row">
+                        <div class="bbcf-row bbcf-openai-row bbcf-openai-size-row">
                             <label for="bbcf-openai-size">OpenAI size</label>
                             <select id="bbcf-openai-size" class="text_pole">
                                 ${option('1024x1024', settings.openaiSize)}
@@ -128,13 +140,25 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                         <div class="bbcf-row bbcf-openai-row">
                             <label for="bbcf-openai-quality">Quality</label>
                             <select id="bbcf-openai-quality" class="text_pole">
-                                ${option('standard', settings.openaiQuality)}
-                                ${option('hd', settings.openaiQuality)}
-                                ${option('high', settings.openaiQuality)}
-                                ${option('medium', settings.openaiQuality)}
-                                ${option('low', settings.openaiQuality)}
+                                ${getImageQualityOptions(settings).map(value => option(value, settings.openaiQuality)).join('')}
                             </select>
                         </div>
+                    </div>
+                    <div class="bbcf-grid-2">
+                        <div class="bbcf-row bbcf-image-parameters-row bbcf-hidden">
+                            <label for="bbcf-image-resolution">Разрешение</label>
+                            <select id="bbcf-image-resolution" class="text_pole"></select>
+                            <small>GPT: ориентир длинной стороны — 1024/2048/3840 px. Для 1K размер может увеличиться до минимальной площади API. Grok: 1K или 2K.</small>
+                        </div>
+                        <div class="bbcf-row bbcf-image-parameters-row bbcf-hidden">
+                            <label for="bbcf-image-aspect-ratio">Пропорции</label>
+                            <select id="bbcf-image-aspect-ratio" class="text_pole"></select>
+                        </div>
+                    </div>
+                    <div class="bbcf-row bbcf-custom-size-row bbcf-hidden">
+                        <label for="bbcf-openai-custom-size">Точный размер GPT (необязательно)</label>
+                        <input id="bbcf-openai-custom-size" class="text_pole" type="text" value="${escapeHtml(settings.openaiCustomSize || '')}" placeholder="Например, 2560x1440">
+                        <small>Заменяет выбранные разрешение и пропорции. Стороны кратны 16, до 3840 px; до 8 294 400 пикселей. Размеры выше 2560×1440 по площади экспериментальные; 4K подходит не для всех пропорций.</small>
                     </div>
                     <div class="bbcf-grid-2">
                         <div class="bbcf-row bbcf-image-size-row">

@@ -1,4 +1,5 @@
 import { VALID_IMAGE_SIZES } from '../core/constants.js';
+import { buildImageRequestOptions, getImageParameterMode } from './image-options.js';
 import { convertDataUrlToPng, fetchUrlAsDataUrl } from '../images/browser.js';
 import {
     geminiApiHeaders,
@@ -19,6 +20,7 @@ export function createImageProviderGenerator(dependencies) {
     async function generateOpenAiImage(panel, references = [], signal = null) {
         const settings = getSettings();
         const baseUrl = normalizeOpenAiBase(settings.endpoint);
+        if (getImageParameterMode(settings) === 'grok') return generateGrokImage(panel, references, signal);
         if (references.length) {
             try {
                 return await generateOpenAiImageEdit(panel, references, signal);
@@ -34,10 +36,8 @@ export function createImageProviderGenerator(dependencies) {
         const url = `${baseUrl}/images/generations`;
         const body = {
             model: settings.model,
-            prompt: `${buildFullPrompt(panel)}\n\nAspect ratio target: ${panel.aspectRatio}.`,
-            size: settings.openaiSize || '1024x1024',
-            quality: settings.openaiQuality || 'standard',
-            response_format: 'b64_json',
+            prompt: ['compatible', 'gpt-image'].includes(getImageParameterMode(settings)) ? `${buildFullPrompt(panel)}\n\nAspect ratio target: ${panel.aspectRatio}.` : buildFullPrompt(panel),
+            ...buildImageRequestOptions(settings, panel),
             n: 1,
         };
         logOpenAiImageRoute(url, 'generation', 0);
@@ -53,16 +53,18 @@ export function createImageProviderGenerator(dependencies) {
     async function generateOpenAiImageEdit(panel, references, signal = null) {
         const settings = getSettings();
         const url = `${normalizeOpenAiBase(settings.endpoint)}/images/edits`;
+        if (getImageParameterMode(settings) !== 'compatible' && references.length > 16) throw new Error('GPT Image принимает до 16 референсов. Уменьшите количество изображений.');
         const formData = new FormData();
         const prompt = [
             buildReferenceInstruction(references),
             buildFullPrompt(panel),
-            `Aspect ratio target: ${panel.aspectRatio}.`,
+            ['compatible', 'gpt-image'].includes(getImageParameterMode(settings)) ? `Aspect ratio target: ${panel.aspectRatio}.` : '',
         ].filter(Boolean).join('\n\n');
         formData.append('model', settings.model);
         formData.append('prompt', prompt);
-        formData.append('size', settings.openaiSize || '1024x1024');
-        formData.append('quality', settings.openaiQuality || 'standard');
+        const options = buildImageRequestOptions(settings, panel);
+        formData.append('size', options.size);
+        formData.append('quality', options.quality);
         formData.append('n', '1');
         const imageField = references.length > 1 ? 'image[]' : 'image';
         for (let index = 0; index < references.length; index++) {
@@ -82,6 +84,42 @@ export function createImageProviderGenerator(dependencies) {
 
     function logOpenAiImageRoute(endpoint, mode, referenceCount) {
         console.info('[BB Comic Forge] OpenAI Images request', { endpoint, mode, referenceCount });
+    }
+
+    async function generateGrokImage(panel, references, signal) {
+        throwIfAborted(signal);
+        if (references.length > 5) throw new Error('Grok принимает до 5 референсов, включая одежду и предыдущие панели. Уменьшите количество изображений.');
+        const settings = getSettings();
+        const body = {
+            model: settings.model,
+            prompt: [buildReferenceInstruction(references), buildFullPrompt(panel)].filter(Boolean).join('\n\n'),
+            ...buildImageRequestOptions(settings, panel),
+            n: 1,
+        };
+        const images = references.map(reference => {
+            if (!reference.dataUrl) throw new Error('Референс Grok не содержит изображения.');
+            return { type: 'image_url', url: reference.dataUrl };
+        });
+        if (images.length === 1) body.image = images[0];
+        else if (images.length) body.images = images;
+        const url = `${normalizeOpenAiBase(settings.endpoint)}/images/${images.length ? 'edits' : 'generations'}`;
+        logOpenAiImageRoute(url, images.length ? 'grok-edit' : 'grok-generation', images.length);
+        const request = payload => fetchJson(url, {
+            method: 'POST', headers: imageApiHeaders(settings), body: JSON.stringify(payload), signal,
+        });
+        let result;
+        try {
+            result = await request(body);
+        } catch (error) {
+            const details = `${error?.apiBody || ''} ${error?.message || ''}`;
+            const requiresImageUrl = /images(?:\[\]|\[\d+\])\.image_url\b[^\r\n]*?(?:required|missing)/i.test(details);
+            if (!images.length || Number(error?.apiStatus) !== 400 || !requiresImageUrl) throw error;
+            throwIfAborted(signal);
+            const { image: _image, images: _images, ...options } = body;
+            logOpenAiImageRoute(url, 'grok-edit-image-url', images.length);
+            result = await request({ ...options, images: images.map(image => ({ image_url: image.url })) });
+        }
+        return extractOpenAiImageResult(result, signal);
     }
 
     function isOpenAiImageEditUnsupported(error) {
@@ -112,7 +150,10 @@ export function createImageProviderGenerator(dependencies) {
 
     function extractOpenAiImageResult(result, signal = null) {
         const image = result?.data?.[0];
-        if (image?.b64_json) return `data:image/png;base64,${image.b64_json}`;
+        if (image?.b64_json) {
+            const mimeType = image.b64_json.startsWith('/9j/') ? 'image/jpeg' : image.b64_json.startsWith('UklG') ? 'image/webp' : 'image/png';
+            return `data:${mimeType};base64,${image.b64_json}`;
+        }
         if (image?.url) return fetchUrlAsDataUrl(image.url, signal);
         throw new Error('OpenAI images response did not contain image data.');
     }

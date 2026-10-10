@@ -14,6 +14,7 @@ import { migrateDraftPrompt, normalizeDraftPromptPresets } from '../draft/prompt
 import { getLayoutPresetById, getStylePresetById } from '../presets/resolvers.js';
 import { filterDraftModelNames, filterModelNamesForProvider } from '../providers/models.js';
 import { normalizeDraftConnectionProfiles, normalizeImageConnectionProfiles } from '../providers/profiles.js';
+import { normalizeImageParameterSettings } from '../providers/image-options.js';
 import { migrateLegacyWardrobe } from '../wardrobe/migrations.js';
 import { normalizeWardrobeAssignments, normalizeWardrobeItems } from '../wardrobe/normalizers.js';
 import { DEFAULT_NEGATIVE_PROMPT, DEFAULT_SETTINGS } from './defaults.js';
@@ -102,6 +103,7 @@ export function normalizeBaseSettings(settings, getTavernProfileLabel = () => ''
     if (!OPENAI_IMAGE_SIZES.includes(settings.openaiSize)) settings.openaiSize = DEFAULT_SETTINGS.openaiSize;
     if (!OPENAI_IMAGE_QUALITIES.includes(settings.openaiQuality)) settings.openaiQuality = DEFAULT_SETTINGS.openaiQuality;
     if (!VALID_IMAGE_SIZES.includes(settings.imageSize)) settings.imageSize = DEFAULT_SETTINGS.imageSize;
+    normalizeImageParameterSettings(settings);
     if (!VALID_ASPECT_RATIOS.includes(settings.aspectRatio) && settings.aspectRatio !== 'auto') settings.aspectRatio = DEFAULT_SETTINGS.aspectRatio;
     if (!VALID_ASPECT_RATIOS.includes(settings.naisteraAspectRatio) && settings.naisteraAspectRatio !== 'auto') settings.naisteraAspectRatio = DEFAULT_SETTINGS.naisteraAspectRatio;
     settings.negativePrompt = String(settings.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT);

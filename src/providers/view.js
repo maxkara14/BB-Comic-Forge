@@ -2,14 +2,10 @@ import { uniqueStrings } from '../core/strings.js';
 import { escapeHtml, option } from '../ui/html.js';
 import { filterDraftModelNames, filterModelNamesForProvider, getKnownModelsForProvider } from './models.js';
 
-export function buildModelOptionsHtml(settings) {
-    return getModelSuggestions(settings).map(model => `<option value="${escapeHtml(model)}"></option>`).join('');
-}
-
 export function getModelSuggestions(settings) {
     const stored = filterModelNamesForProvider(Array.isArray(settings.availableModels) ? settings.availableModels : [], settings.apiType);
     const suggestions = stored.length ? stored : getKnownModelsForProvider(settings.apiType);
-    return uniqueStrings([settings.model, ...suggestions]).slice(0, 120);
+    return uniqueStrings([settings.model, ...suggestions]);
 }
 
 export function buildDraftModelOptionsHtml(settings) {
@@ -59,7 +55,8 @@ export function getDraftEndpointPlaceholder(mode) {
     return 'не требуется';
 }
 
-export function getProviderNote(apiType) {
+export function getProviderNote(apiType, imageMode = 'compatible') {
+    if (apiType === 'openai-images' && imageMode === 'grok') return 'Grok Imagine: без референсов /images/generations; с референсами /images/edits через JSON (до 5 изображений, включая одежду и предыдущие панели). Все выбранные референсы отправляются; при ошибке они не отбрасываются. Поддержка формата зависит от прокси.';
     if (apiType === 'gemini') return 'Gemini хорошо подходит для референсов и образов. Gemini-compatible endpoint можно указывать базой, например /compatible.';
     if (apiType === 'openai-images') return 'OpenAI Images: без референсов используется /images/generations. С включёнными референсами Comic Forge пробует /images/edits; если источник его не поддерживает, запрос повторяется без файлов — только с текстовыми описаниями референсов. Endpoint можно указывать как /v1 или просто базовый URL.';
     if (apiType === 'openai-chat') return 'OpenAI chat: режим для прокси, которые умеют возвращать изображения и читать референсы. OpenAI-compatible endpoint можно указывать базовым URL.';

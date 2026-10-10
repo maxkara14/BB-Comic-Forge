@@ -109,7 +109,22 @@ Supported connection types:
 
 Save multiple profiles to switch between providers, endpoints, keys, models, and related settings. Connecting loads model suggestions from the provider when available; built-in names serve as fallback suggestions, and you can always enter a model manually. Naistera uses a built-in list. A model listing does not guarantee image-generation support.
 
+Click **Model** to open suggestions; typing filters the entire list. Selecting a suggestion or pressing Enter applies the model, including a manually entered ID. Escape or leaving the field cancels search and restores the current model; search text is never saved as the model name.
+
 OpenAI Images uses `images/generations` without references and `images/edits` when reference images are attached. If a compatible service explicitly reports that the edit endpoint or image input is unsupported, **Comic Forge retries without files**, retaining textual descriptions of references and clothing in the prompt.
+
+Under **OpenAI Images → Model parameters** (labelled “Параметры модели”), select the API format and save it in the connection profile:
+
+- **OpenAI-compatible** preserves the existing `size`, `quality`, and `response_format` fields.
+- **GPT Image 1 / 1.5 / Mini** offers standard sizes and `auto`, `low`, `medium`, `high` quality.
+- **GPT Image 2 / 2.5** maps resolution and aspect ratio to `size`. The 2.5 mode also offers `xhigh` and `max`. An optional exact size such as `2560x1440` overrides the resolution and ratio presets.
+- **Grok Imagine Image 2.0** sends `resolution: 1k/2k`, `aspect_ratio`, and `auto`, `low`, `medium` quality. References go to `/images/edits` as JSON: `image` for one source, `images` for multiple sources. Up to five images total, including wardrobe and previous panels; errors never trigger a reference-free retry in Grok mode.
+
+GPT 2/2.5 presets target a longest edge of 1024/2048/3840 px, rounded to multiples of 16. The 1K preset can grow to meet the minimum pixel count. GPT limits: each edge up to 3840 px, ratios between 1:3 and 3:1, and 655,360–8,294,400 total pixels. Not all ratios support the 4K preset. Outputs above 3,686,400 pixels are experimental. Invalid dimensions are rejected before the API request. GPT references remain multipart file uploads, up to 16 images.
+
+Select the mode manually because proxy model names may be aliases. Support for these parameters and reference formats on a particular proxy, including DDT, requires verification; vendor-specific fields do not leak into other modes.
+
+If a Grok proxy returns HTTP 400 requiring `images[].image_url`, Comic Forge retries the same `/images/edits` endpoint once with `images: [{ image_url: "data:…" }]`. All references, the prompt, resolution, aspect ratio, and quality are preserved. Other errors do not trigger this retry.
 
 The browser console records the endpoint used and the number of attached files, without logging the API key or prompt contents.
 

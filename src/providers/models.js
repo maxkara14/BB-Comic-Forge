@@ -1,7 +1,7 @@
 import { uniqueStrings } from '../core/strings.js';
 
 export function getKnownModelsForProvider(apiType) {
-    if (apiType === 'openai-images') return ['gpt-image-1', 'dall-e-3', 'dall-e-2'];
+    if (apiType === 'openai-images') return ['gpt-image-1', 'dall-e-3', 'dall-e-2', 'gpt-image-1.5', 'gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'grok-imagine-image-2.0'];
     if (apiType === 'openai-chat') return ['gpt-image-1', 'grok-2-image', 'gemini-2.5-flash-image-preview', 'nano banana'];
     if (apiType === 'gemini') return ['gemini-2.5-flash-image-preview', 'gemini-2.0-flash-preview-image-generation'];
     if (apiType === 'naistera') return ['nano banana', 'grok', 'grok-pro', 'novelai'];

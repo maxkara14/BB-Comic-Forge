@@ -210,6 +210,7 @@ const {
     getSupportedTavernDraftProfiles,
     loadDraftModels,
     loadProviderModels,
+    bindImageModelPicker,
     saveDraftConnectionProfile,
     saveImageConnectionProfile,
     syncDraftConnectionProfileUi,
@@ -585,6 +586,7 @@ function createSettingsUi() {
 }
 
 function bindSettingsUi(root) {
+    bindImageModelPicker(root);
     root.querySelector('#bbcf-open-modal')?.addEventListener('click', openForgeModal);
     root.querySelectorAll('[data-bbcf-open-settings]').forEach(button => {
         const section = root.querySelector(`#${button.dataset.bbcfOpenSettings}`);
@@ -648,9 +650,15 @@ function bindSettingsUi(root) {
     bindSettingInput(root, '#bbcf-draft-tavern-profile', 'draftTavernProfileId', 'value', () => syncDraftConnectionRows());
     bindSettingInput(root, '#bbcf-endpoint', 'endpoint');
     bindSettingInput(root, '#bbcf-api-key', 'apiKey');
-    bindSettingInput(root, '#bbcf-model', 'model');
     bindSettingInput(root, '#bbcf-openai-size', 'openaiSize');
     bindSettingInput(root, '#bbcf-openai-quality', 'openaiQuality');
+    bindSettingInput(root, '#bbcf-image-parameter-mode', 'openaiImageMode', 'value', () => {
+        syncProviderRows();
+        saveSettings();
+    });
+    bindSettingInput(root, '#bbcf-image-aspect-ratio', 'imageAspectRatio');
+    bindSettingInput(root, '#bbcf-image-resolution', 'imageSize');
+    bindSettingInput(root, '#bbcf-openai-custom-size', 'openaiCustomSize');
     bindSettingInput(root, '#bbcf-image-size', 'imageSize');
     bindSettingInput(root, '#bbcf-naistera-model', 'naisteraModel');
     bindSettingInput(root, '#bbcf-naistera-preset', 'naisteraPreset');
@@ -1459,6 +1467,7 @@ function joinFinalPromptPreviewItems(items = []) {
 function buildProviderPromptPreview(panel, settings) {
     const prompt = buildFullPrompt(panel);
     if (settings.apiType === 'openai-images') {
+        if (['gpt-image-2', 'gpt-image-2.5', 'grok'].includes(settings.openaiImageMode)) return prompt;
         return `${prompt}\n\nAspect ratio target: ${panel.aspectRatio}.`;
     }
     if (settings.apiType === 'openai-chat') {

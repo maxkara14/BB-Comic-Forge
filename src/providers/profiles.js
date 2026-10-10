@@ -9,6 +9,7 @@ import {
 import { makeId } from '../core/id.js';
 import { DEFAULT_SETTINGS } from '../settings/defaults.js';
 import { filterDraftModelNames, filterModelNamesForProvider } from './models.js';
+import { normalizeImageParameterSettings } from './image-options.js';
 
 export function normalizeDraftConnectionProfiles(rawProfiles, getTavernProfileLabel = () => '') {
     const profiles = Array.isArray(rawProfiles) ? rawProfiles : [];
@@ -46,7 +47,7 @@ export function normalizeImageConnectionProfiles(rawProfiles) {
             const naisteraAspectRatio = VALID_ASPECT_RATIOS.includes(profile.naisteraAspectRatio) || profile.naisteraAspectRatio === 'auto'
                 ? profile.naisteraAspectRatio
                 : DEFAULT_SETTINGS.naisteraAspectRatio;
-            return {
+            return normalizeImageParameterSettings({
                 id: String(profile.id || makeId('image-connection')),
                 label: String(profile.label || profile.name || getImageConnectionProfileFallbackLabel(profile, apiType)).trim(),
                 apiType,
@@ -56,12 +57,15 @@ export function normalizeImageConnectionProfiles(rawProfiles) {
                 availableModels,
                 openaiSize: OPENAI_IMAGE_SIZES.includes(profile.openaiSize) ? profile.openaiSize : DEFAULT_SETTINGS.openaiSize,
                 openaiQuality: OPENAI_IMAGE_QUALITIES.includes(profile.openaiQuality) ? profile.openaiQuality : DEFAULT_SETTINGS.openaiQuality,
+                openaiImageMode: profile.openaiImageMode,
+                imageAspectRatio: profile.imageAspectRatio,
+                openaiCustomSize: profile.openaiCustomSize,
                 aspectRatio,
                 imageSize: VALID_IMAGE_SIZES.includes(profile.imageSize) ? profile.imageSize : DEFAULT_SETTINGS.imageSize,
                 naisteraModel: String(profile.naisteraModel || DEFAULT_SETTINGS.naisteraModel),
                 naisteraAspectRatio,
                 naisteraPreset: String(profile.naisteraPreset || DEFAULT_SETTINGS.naisteraPreset),
-            };
+            });
         })
         .filter(profile => profile.id && profile.label)
         .slice(0, 40);

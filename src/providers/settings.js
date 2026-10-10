@@ -19,7 +19,6 @@ import {
     buildDraftConnectionProfileOptionsHtml,
     buildDraftModelOptionsHtml,
     buildImageConnectionProfileOptionsHtml,
-    buildModelOptionsHtml,
     getActiveDraftConnectionProfile,
     getActiveImageConnectionProfile,
     getDraftEndpointPlaceholder,
@@ -28,8 +27,11 @@ import {
     getProviderNote,
 } from './view.js';
 import { option } from '../ui/html.js';
+import { createImageModelPicker } from '../ui/model-picker.js';
+import { getImageParameterMode, getImageQualityOptions, GROK_ASPECT_RATIOS, IMAGE_ASPECT_RATIOS, normalizeImageParameterSettings } from './image-options.js';
 
 export function createProviderSettingsController(dependencies) {
+    let modelRequestId = 0;
     const {
         ConnectionManagerRequestService,
         fetchJson,
@@ -48,13 +50,27 @@ export function createProviderSettingsController(dependencies) {
         const settings = getSettings();
         const root = document.getElementById(SETTINGS_ID);
         if (!root) return;
+        normalizeImageParameterSettings(settings);
+        const imageMode = getImageParameterMode(settings);
+        const modern = ['gpt-image-2', 'gpt-image-2.5', 'grok'].includes(imageMode);
+        updateSelectOptions(root.querySelector('#bbcf-openai-size'), (imageMode === 'gpt-image' ? ['1024x1024', '1536x1024', '1024x1536', 'auto'] : ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792', 'auto']).map(value => option(value, settings.openaiSize)).join(''), settings.openaiSize);
         root.querySelectorAll('.bbcf-openai-row').forEach(node => node.classList.toggle('bbcf-hidden', settings.apiType !== 'openai-images'));
         root.querySelectorAll('.bbcf-naistera-row').forEach(node => node.classList.toggle('bbcf-hidden', settings.apiType !== 'naistera'));
         root.querySelectorAll('.bbcf-image-size-row').forEach(node => node.classList.toggle('bbcf-hidden', ['openai-images', 'naistera'].includes(settings.apiType)));
+        root.querySelectorAll('.bbcf-openai-size-row').forEach(node => node.classList.toggle('bbcf-hidden', settings.apiType !== 'openai-images' || modern));
+        root.querySelectorAll('.bbcf-image-parameters-row').forEach(node => node.classList.toggle('bbcf-hidden', settings.apiType !== 'openai-images' || !modern));
+        root.querySelectorAll('.bbcf-custom-size-row').forEach(node => node.classList.toggle('bbcf-hidden', settings.apiType !== 'openai-images' || !modern || imageMode === 'grok'));
+        updateSelectOptions(root.querySelector('#bbcf-openai-quality'), getImageQualityOptions(settings).map(value => option(value, settings.openaiQuality)).join(''), settings.openaiQuality);
+        const ratios = imageMode === 'grok' ? GROK_ASPECT_RATIOS : IMAGE_ASPECT_RATIOS.filter(ratio => {
+            const [width, height] = ratio.split(':').map(Number);
+            return Math.max(width, height) / Math.min(width, height) <= 3;
+        });
+        updateSelectOptions(root.querySelector('#bbcf-image-aspect-ratio'), [option('auto', settings.imageAspectRatio, 'По пропорциям панели'), ...ratios.map(value => option(value, settings.imageAspectRatio))].join(''), settings.imageAspectRatio);
+        updateSelectOptions(root.querySelector('#bbcf-image-resolution'), (imageMode === 'grok' ? ['1K', '2K'] : ['1K', '2K', '4K']).map(value => option(value, settings.imageSize)).join(''), settings.imageSize);
         const endpoint = root.querySelector('#bbcf-endpoint');
         if (endpoint) endpoint.placeholder = getEndpointPlaceholder(settings.apiType);
         const note = root.querySelector('#bbcf-provider-note');
-        if (note) note.textContent = getProviderNote(settings.apiType);
+        if (note) note.textContent = getProviderNote(settings.apiType, imageMode);
         updateModelPicker(root);
         refreshSettingsDashboard(root);
     }
@@ -84,6 +100,7 @@ export function createProviderSettingsController(dependencies) {
         }
 
         applyImageConnectionProfileToSettings(settings, profile);
+        modelPicker.close(root);
         settings.activeImageConnectionProfileId = profile.id;
         saveSettings();
         setImageConnectionControls(root, settings);
@@ -138,6 +155,9 @@ export function createProviderSettingsController(dependencies) {
             availableModels: filterModelNamesForProvider(settings.availableModels, settings.apiType),
             openaiSize: settings.openaiSize,
             openaiQuality: settings.openaiQuality,
+            openaiImageMode: settings.openaiImageMode,
+            imageAspectRatio: settings.imageAspectRatio,
+            openaiCustomSize: settings.openaiCustomSize,
             aspectRatio: settings.aspectRatio,
             imageSize: settings.imageSize,
             naisteraModel: settings.naisteraModel,
@@ -154,6 +174,9 @@ export function createProviderSettingsController(dependencies) {
         settings.availableModels = filterModelNamesForProvider(profile.availableModels, profile.apiType);
         settings.openaiSize = profile.openaiSize;
         settings.openaiQuality = profile.openaiQuality;
+        settings.openaiImageMode = profile.openaiImageMode;
+        settings.imageAspectRatio = profile.imageAspectRatio;
+        settings.openaiCustomSize = profile.openaiCustomSize;
         settings.aspectRatio = profile.aspectRatio;
         settings.imageSize = profile.imageSize;
         settings.naisteraModel = profile.naisteraModel;
@@ -168,6 +191,10 @@ export function createProviderSettingsController(dependencies) {
         setSettingsControlValue(root, '#bbcf-model', settings.model);
         setSettingsControlValue(root, '#bbcf-openai-size', settings.openaiSize);
         setSettingsControlValue(root, '#bbcf-openai-quality', settings.openaiQuality);
+        setSettingsControlValue(root, '#bbcf-image-parameter-mode', settings.openaiImageMode);
+        setSettingsControlValue(root, '#bbcf-image-aspect-ratio', settings.imageAspectRatio);
+        setSettingsControlValue(root, '#bbcf-image-resolution', settings.imageSize);
+        setSettingsControlValue(root, '#bbcf-openai-custom-size', settings.openaiCustomSize);
         setSettingsControlValue(root, '#bbcf-image-size', settings.imageSize);
         setSettingsControlValue(root, '#bbcf-naistera-model', settings.naisteraModel);
         setSettingsControlValue(root, '#bbcf-naistera-preset', settings.naisteraPreset);
@@ -320,20 +347,13 @@ export function createProviderSettingsController(dependencies) {
         return '';
     }
 
-    function updateModelPicker(root = document.getElementById(SETTINGS_ID)) {
-        if (!root) return;
-        const settings = getSettings();
-        const datalist = root.querySelector('#bbcf-model-options');
-        if (datalist) datalist.innerHTML = buildModelOptionsHtml(settings);
-        const input = root.querySelector('#bbcf-model');
-        if (input) {
-            input.placeholder = getKnownModelsForProvider(settings.apiType)[0] || 'model';
-            if (input.value !== settings.model) input.value = settings.model || '';
-        }
-    }
+    const modelPicker = createImageModelPicker({ getSettings, saveSettings, refreshSettingsDashboard });
+    const { bind: bindImageModelPicker, update: updateModelPicker } = modelPicker;
 
     async function loadProviderModels({ button = null, silent = false } = {}) {
         const settings = getSettings();
+        const requestId = ++modelRequestId;
+        const requestSettings = { ...settings };
         const previousHtml = button?.innerHTML;
         if (button) {
             button.disabled = true;
@@ -341,16 +361,18 @@ export function createProviderSettingsController(dependencies) {
         }
         try {
             if (!settings.apiKey && settings.apiType !== 'naistera') throw new Error('API key не настроен.');
-            const models = await fetchProviderModels(settings);
-            settings.availableModels = models.length ? models : getKnownModelsForProvider(settings.apiType);
-            if (!settings.model && settings.availableModels.length) settings.model = settings.availableModels[0];
+            const models = await fetchProviderModels(requestSettings);
+            const current = getSettings();
+            if (requestId !== modelRequestId || ['apiType', 'endpoint', 'apiKey', 'activeImageConnectionProfileId'].some(key => current[key] !== requestSettings[key])) return [];
+            current.availableModels = models.length ? models : getKnownModelsForProvider(current.apiType);
+            if (!current.model && current.model === requestSettings.model && current.availableModels.length) current.model = current.availableModels[0];
             saveSettings();
             updateModelPicker();
             if (!silent) {
-                const count = settings.availableModels.length;
+                const count = current.availableModels.length;
                 notifySuccess(count ? `Подключено. Найдено моделей: ${count}.` : 'Подключено.');
             }
-            return settings.availableModels;
+            return current.availableModels;
         } catch (error) {
             if (!silent) notifyError(error?.message || String(error));
             throw error;
@@ -450,6 +472,7 @@ export function createProviderSettingsController(dependencies) {
     }
 
     return {
+        bindImageModelPicker,
         applyDraftConnectionProfile,
         applyImageConnectionProfile,
         buildDraftTavernProfileOptionsHtml,
