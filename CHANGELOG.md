@@ -4,6 +4,14 @@
 
 ## Русский
 
+### Референсы рисовки — 2026-10-11 (без изменения версии)
+
+- Добавлены три общих референса рисовки в общем разделе «Референсы» → «Рисовка»: загрузка, вставка, отключение, название и описание. Они хранятся отдельно от референсов персонажей и не экспортируются с пресетами.
+- Уточнены роли всех референсов: внешность и гардероб не задают стиль рисовки; примеры рисовки не задают персонажей и одежду. Предыдущие страницы сохраняют непрерывность в текущем стиле.
+- Изображения рисовки передаются через существующие подключения с отдельной ролью: линии, цвет, тени и фактура; внешность, одежда, сюжет и макет не копируются из примера. Описания включаются в prompt даже без изображения.
+- Объединены персонажи, рисовка и гардероб в разделе «Референсы». Примеры рисовки сворачиваются отдельно; исправлены отступы иконок после преобразования раскрывающихся разделов.
+- Добавлены проверки нормализации, ролей и порядка изображений, запроса Gemini, сохранения, загрузки и вставки, синхронизации интерфейса и ошибок.
+
 ### Корректировка и очистка черновика — 2026-10-10 (без изменения версии)
 
 - Добавлена корректировка текущего черновика по запросу: модель получает контекст и текущее содержимое, а генерация изображения запускается отдельно.
@@ -45,6 +53,14 @@
 История начата с этого файла. Ранние изменения не реконструируются полностью; даты и ссылки на коммиты выше взяты из Git.
 
 ## English
+
+### Rendering references — 2026-10-11 (no version change)
+
+- Added three shared rendering references to References → Rendering settings: upload, clipboard paste, enable, name and description. They are separate from character references and excluded from portable presets.
+- Unified characters, rendering and wardrobe under References. Rendering examples collapse individually; fixed icon spacing after disclosure conversion.
+- Character and wardrobe references explicitly exclude rendering style; rendering references exclude character identity and outfits. Previous pages preserve continuity in the current style.
+- Style images use existing image connections with a separate rendering-only role; descriptions enter the prompt even without an image. Identity, clothing, story and layout are not copied from style examples.
+- Added checks for normalization, image roles and order, Gemini requests, persistence, upload and clipboard paste, UI synchronization and errors.
 
 ### Draft revision and clearing — 2026-10-10 (no version change)
 

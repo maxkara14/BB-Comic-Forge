@@ -28,6 +28,7 @@ export function setDisclosureExpanded(disclosure, expanded, { emit = true } = {}
 export function upgradeDisclosures(root) {
     const detailsNodes = Array.from(root?.querySelectorAll('details') || []);
     for (const details of detailsNodes) {
+        if (details.hasAttribute('data-bbcf-native-details')) continue;
         const summary = details.querySelector(':scope > summary');
         if (!summary) continue;
         const disclosure = document.createElement('section');

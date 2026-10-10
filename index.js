@@ -541,6 +541,7 @@ function getSettingsDashboardState(settings = getSettings()) {
     const style = getStylePresetById(activeDraft.stylePreset, settings);
     const layout = getLayoutPresetById(activeDraft.layout, settings);
     const enabledReferences = settings.references.filter(reference => reference.enabled && reference.path).length;
+    const styleReferences = settings.styleReferences.filter(reference => reference.enabled && (reference.path || reference.description)).length;
     const activeWardrobe = settings.wardrobeEnabled ? getWardrobeActiveEntries(settings).length : 0;
     const imageNeedsModel = settings.apiType !== 'naistera';
     const imageReady = Boolean(settings.apiKey
@@ -565,8 +566,10 @@ function getSettingsDashboardState(settings = getSettings()) {
             `${activeDraft.panelCount} пан.`,
             activeDraft.generationMode === 'single' ? 'экономно' : 'по панелям',
         ].filter(Boolean).join(' · '),
-        referenceTitle: enabledReferences || activeWardrobe ? `${enabledReferences} реф. · ${activeWardrobe} вещей` : 'Референсы не добавлены',
-        referenceMeta: activeWardrobe ? 'Персонажи и активный гардероб' : 'Персонажи и гардероб',
+        referenceTitle: enabledReferences || activeWardrobe || styleReferences ? 'Референсы' : 'Референсы не добавлены',
+        referenceMeta: enabledReferences || activeWardrobe || styleReferences
+            ? `${enabledReferences} персонажей · ${styleReferences} рисовки · ${activeWardrobe} вещей`
+            : 'Персонажи, рисовка и гардероб',
     };
 }
 

@@ -16,7 +16,7 @@ import { filterDraftModelNames, filterModelNamesForProvider } from '../providers
 import { normalizeDraftConnectionProfiles, normalizeImageConnectionProfiles } from '../providers/profiles.js';
 import { normalizeImageParameterSettings } from '../providers/image-options.js';
 import { migrateLegacyWardrobe } from '../wardrobe/migrations.js';
-import { normalizeWardrobeAssignments, normalizeWardrobeItems } from '../wardrobe/normalizers.js';
+import { normalizeStyleReferences, normalizeWardrobeAssignments, normalizeWardrobeItems } from '../wardrobe/normalizers.js';
 import { DEFAULT_NEGATIVE_PROMPT, DEFAULT_SETTINGS } from './defaults.js';
 import { normalizeSavedLayouts, normalizeSavedStyles } from './normalizers.js';
 
@@ -107,6 +107,7 @@ export function normalizeBaseSettings(settings, getTavernProfileLabel = () => ''
     if (!VALID_ASPECT_RATIOS.includes(settings.aspectRatio) && settings.aspectRatio !== 'auto') settings.aspectRatio = DEFAULT_SETTINGS.aspectRatio;
     if (!VALID_ASPECT_RATIOS.includes(settings.naisteraAspectRatio) && settings.naisteraAspectRatio !== 'auto') settings.naisteraAspectRatio = DEFAULT_SETTINGS.naisteraAspectRatio;
     settings.negativePrompt = String(settings.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT);
+    settings.styleReferences = normalizeStyleReferences(settings.styleReferences);
     settings.defaultPanelNotes = String(settings.defaultPanelNotes || '');
     settings.defaultBubbles = String(settings.defaultBubbles || '');
     settings.defaultInserts = String(settings.defaultInserts || '');

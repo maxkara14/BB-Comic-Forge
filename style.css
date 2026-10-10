@@ -316,6 +316,31 @@
     padding: 0;
 }
 
+#bbcf-settings .bbcf-reference-group { min-width: 0; border-top: 1px solid var(--SmartThemeBorderColor); padding: 10px 0; }
+#bbcf-settings .bbcf-reference-group > :is(summary, .bbcf-disclosure-toggle) { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .85rem; }
+#bbcf-settings .bbcf-reference-group > summary::after { content: '\2304'; margin-left: auto; }
+#bbcf-settings .bbcf-reference-group[open] > summary::after { content: '\2303'; }
+#bbcf-settings .bbcf-reference-group > .bbcf-ref-grid,
+#bbcf-settings .bbcf-reference-group > .bbcf-wardrobe-panel { margin-top: 12px; }
+#bbcf-settings .bbcf-style-references > .bbcf-hint { margin: 10px 0 !important; font-size: .75rem; }
+#bbcf-settings .bbcf-style-reference-list { display: grid; gap: 6px; min-width: 0; }
+#bbcf-settings .bbcf-style-ref { display: block; min-width: 0; padding: 8px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 8px; }
+#bbcf-settings .bbcf-style-ref-summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+#bbcf-settings .bbcf-style-ref-summary::-webkit-details-marker { display: none; }
+#bbcf-settings .bbcf-style-ref-summary::after { content: '\2304'; color: var(--bbcf-muted); }
+#bbcf-settings .bbcf-style-ref[open] > summary::after { content: '\2303'; }
+#bbcf-settings .bbcf-style-ref .bbcf-ref-thumb { width: 32px; height: 40px; flex: 0 0 32px; }
+#bbcf-settings .bbcf-style-ref-caption { display: grid; gap: 3px; flex: 1; min-width: 0; }
+#bbcf-settings .bbcf-style-ref-caption strong { font-size: .8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bbcf-settings .bbcf-style-ref-caption small { font-size: .7rem; color: var(--bbcf-muted); }
+#bbcf-settings .bbcf-style-ref .bbcf-ref-enabled { flex: 0 0 auto; margin: 0; }
+#bbcf-settings .bbcf-style-ref .bbcf-ref-main { display: grid; gap: 8px; min-width: 0; border-top: 1px solid var(--SmartThemeBorderColor); margin-top: 8px; padding-top: 10px; }
+#bbcf-settings .bbcf-style-ref:not([open]) > .bbcf-ref-main { display: none; }
+#bbcf-settings .bbcf-style-ref .text_pole { width: 100%; min-width: 0; margin: 0; font-size: .8rem; }
+#bbcf-settings .bbcf-style-ref .bbcf-ref-description { min-height: 48px; resize: vertical; }
+#bbcf-settings .bbcf-style-ref .bbcf-ref-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; gap: 6px; }
+#bbcf-settings .bbcf-style-ref .bbcf-ref-actions .menu_button { margin: 0; padding: 5px 6px; min-height: 32px; width: auto; font-size: .75rem; }
+
 #bbcf-settings .bbcf-hint {
     margin: 0;
     color: var(--bbcf-muted);

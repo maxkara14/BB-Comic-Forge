@@ -194,6 +194,8 @@ In economical mode, shared page information, character lock, references, wardrob
 
 Regular character, NPC, and user references belong to the current context. Upload them or paste them from the clipboard, and optionally add names and text descriptions for providers without image input.
 
+**Rendering** (`Рисовка`) is part of the shared **References** (`Референсы`) settings section alongside characters and wardrobe. Examples appear as compact rows; click an example to expand its fields. Upload or paste up to three examples, describe the features to transfer and disable examples individually. They are shared across chats and excluded from portable presets. Separate instructions transfer linework, color, shading and texture; character identity, clothing, story and layout come from their respective references and the draft. Appearance and wardrobe references do not define rendering style; rendering examples do not define identity or clothing. Disable previous examples when changing rendering styles.
+
 The wardrobe library is shared, while equipped items are saved separately for each character/chat context. Describe, tag, and edit items, then apply a complete outfit or select items by category.
 
 Comic Forge does not independently truncate the active reference list. It sends all successfully loaded, enabled images; the model and provider determine the actual limit.

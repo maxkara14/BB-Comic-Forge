@@ -141,6 +141,7 @@ export const DEFAULT_SETTINGS = {
     activeDraftPromptPresetId: '',
     presetLibraryColumns: 2,
     references: [],
+    styleReferences: [],
     referenceProfiles: {},
     activeReferenceProfileKey: '',
     referencesMigratedToProfiles: false,

@@ -25,6 +25,7 @@ import {
 } from './config.js';
 import {
     normalizeReferences,
+    normalizeStyleReferences,
     normalizeWardrobeAssignment,
     normalizeWardrobeItems,
 } from './normalizers.js';
@@ -185,9 +186,13 @@ export function createWardrobeController(dependencies) {
             thumb.removeAttribute('title');
             thumb.innerHTML = ref.path
                 ? `<img src="${escapeHtml(ref.path)}" alt="${escapeHtml(ref.label)}" data-bbcf-ref-image>`
-                : '<i class="fa-solid fa-user"></i>';
+                : `<i class="fa-solid ${ref.kind === 'style' ? 'fa-palette' : 'fa-user'}"></i>`;
             bindReferenceImageFallbacks(card);
         }
+        const name = card.querySelector('[data-bbcf-style-name]');
+        if (name) name.textContent = ref.name || ref.label;
+        const status = card.querySelector('[data-bbcf-style-status]');
+        if (status) status.textContent = ref.path ? 'Изображение добавлено' : ref.description ? 'Текстовое описание' : 'Добавить изображение';
         const clearButton = card.querySelector('.bbcf-ref-clear');
         if (clearButton) clearButton.disabled = !ref.path;
     }
@@ -280,6 +285,7 @@ export function createWardrobeController(dependencies) {
             if (path) paths.add(path);
         };
         normalizeReferences(settings.references).forEach(ref => addPath(ref.path));
+        normalizeStyleReferences(settings.styleReferences).forEach(ref => addPath(ref.path));
         Object.values(settings.referenceProfiles || {}).forEach(profile => {
             normalizeReferences(profile).forEach(ref => addPath(ref.path));
         });
@@ -498,10 +504,21 @@ export function createWardrobeController(dependencies) {
 
     function updateReference(id, patch, options = {}) {
         const settings = getSettings();
-        const ref = settings.references.find(item => item.id === id);
+        const style = normalizeStyleReferences(settings.styleReferences).some(item => item.id === id);
+        if (style) settings.styleReferences = normalizeStyleReferences(settings.styleReferences);
+        const ref = (style ? settings.styleReferences : settings.references).find(item => item.id === id);
         if (!ref) return null;
         Object.assign(ref, patch);
-        settings.referenceProfiles[getReferenceProfileKey()] = structuredClone(settings.references);
+        if (!style) settings.referenceProfiles[getReferenceProfileKey()] = structuredClone(settings.references);
+        if (style) document.querySelectorAll(`[data-bbcf-ref="${id}"]`).forEach(card => {
+            syncReferenceCard(card, ref);
+            const enabled = card.querySelector('.bbcf-ref-enabled');
+            if (enabled) enabled.checked = ref.enabled;
+            for (const field of ['name', 'description']) {
+                const input = card.querySelector(`.bbcf-ref-${field}`);
+                if (input && input.value !== ref[field]) input.value = ref[field];
+            }
+        });
         if (options.immediate) void saveSettingsImmediately();
         else saveSettings();
         return ref;

@@ -21,6 +21,17 @@ export function normalizeReferences(rawReferences) {
     });
 }
 
+// Rendering references are shared across chats and kept separate from character profiles.
+export function normalizeStyleReferences(rawReferences) {
+    const byId = new Map(Array.isArray(rawReferences) ? rawReferences.map(ref => [ref?.id, ref]) : []);
+    return [1, 2, 3].map(index => {
+        const id = `style_${index}`;
+        const ref = byId.get(id) || {};
+        return { id, label: `Пример ${index}`, kind: 'style', enabled: ref.enabled !== false,
+            name: String(ref.name || '').trim(), description: String(ref.description || '').trim(), path: String(ref.path || '').trim() };
+    });
+}
+
 export function hasReferenceProfileData(rawReferences) {
     return normalizeReferences(rawReferences).some(ref =>
         ref.enabled === false

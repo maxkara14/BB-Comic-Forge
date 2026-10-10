@@ -10,7 +10,7 @@ import {
     getDraftModelPlaceholder,
     getEndpointPlaceholder,
 } from '../providers/view.js';
-import { buildReferenceSettingsHtml, buildWardrobeSummaryHtml } from '../wardrobe/view.js';
+import { buildReferenceSettingsHtml, buildStyleReferenceSettingsHtml, buildWardrobeSummaryHtml } from '../wardrobe/view.js';
 import { escapeHtml, option } from './html.js';
 import { getImageQualityOptions } from '../providers/image-options.js';
 
@@ -55,7 +55,7 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                         </button>
                         <button class="bbcf-dashboard-card" type="button" data-bbcf-dashboard-card="references" data-bbcf-open-settings="bbcf-reference-settings">
                             <span class="bbcf-dashboard-icon"><i class="fa-solid fa-user-group"></i></span>
-                            <span class="bbcf-dashboard-copy"><strong data-bbcf-dashboard-title>Персонажи и гардероб</strong><small data-bbcf-dashboard-meta></small></span>
+                            <span class="bbcf-dashboard-copy"><strong data-bbcf-dashboard-title>Референсы</strong><small data-bbcf-dashboard-meta></small></span>
                             <i class="fa-solid fa-chevron-right bbcf-dashboard-arrow"></i>
                         </button>
                     </div>
@@ -256,29 +256,33 @@ export function renderSettingsHtml(settings, { draftTavernProfileOptionsHtml = '
                 </details>
 
                 <details class="bbcf-section bbcf-settings-details" id="bbcf-reference-settings">
-                    <summary class="bbcf-section-title"><i class="fa-solid fa-user-group"></i><span>Персонажи и гардероб</span><small id="bbcf-reference-settings-meta"></small></summary>
-                    <div class="bbcf-ref-grid">
-                        ${buildReferenceSettingsHtml(settings)}
-                    </div>
-                    <div class="bbcf-wardrobe-panel">
-                        <div class="bbcf-wardrobe-head">
-                            <div>
-                                <h5><i class="fa-solid fa-shirt"></i> Гардероб</h5>
+                    <summary class="bbcf-section-title"><i class="fa-solid fa-images"></i><span>Референсы</span><small id="bbcf-reference-settings-meta"></small></summary>
+                    <details class="bbcf-reference-group">
+                        <summary><i class="fa-solid fa-user-group"></i><span>Персонажи</span></summary>
+                        <div class="bbcf-ref-grid">
+                            ${buildReferenceSettingsHtml(settings)}
+                        </div>
+                    </details>
+                    ${buildStyleReferenceSettingsHtml(settings)}
+                    <details class="bbcf-reference-group">
+                        <summary><i class="fa-solid fa-shirt"></i><span>Гардероб</span></summary>
+                        <div class="bbcf-wardrobe-panel">
+                            <div class="bbcf-wardrobe-head">
+                                <div class="bbcf-wardrobe-head-actions">
+                                    <button class="menu_button" type="button" data-bbcf-wardrobe-recover title="Найти гардеробные картинки без записи в библиотеке"><i class="fa-solid fa-rotate-left"></i><span>Восстановить</span></button>
+                                    <button class="menu_button bbcf-primary" type="button" id="bbcf-open-wardrobe"><i class="fa-solid fa-door-open"></i><span>Открыть</span></button>
+                                </div>
                             </div>
-                            <div class="bbcf-wardrobe-head-actions">
-                                <button class="menu_button" type="button" data-bbcf-wardrobe-recover title="Найти гардеробные картинки без записи в библиотеке"><i class="fa-solid fa-rotate-left"></i><span>Восстановить</span></button>
-                                <button class="menu_button bbcf-primary" type="button" id="bbcf-open-wardrobe"><i class="fa-solid fa-door-open"></i><span>Открыть</span></button>
+                            <div class="bbcf-wardrobe-options">
+                                <label class="checkbox_label"><input type="checkbox" id="bbcf-wardrobe-enabled" ${settings.wardrobeEnabled ? 'checked' : ''}> <span>Использовать встроенный гардероб</span></label>
+                                <label class="checkbox_label"><input type="checkbox" id="bbcf-wardrobe-desc" ${settings.wardrobeSendDescription ? 'checked' : ''}> <span>Учитывать описания образов</span></label>
+                                <label class="checkbox_label"><input type="checkbox" id="bbcf-wardrobe-images" ${settings.wardrobeSendImages ? 'checked' : ''}> <span>Прикладывать картинки образов</span></label>
+                            </div>
+                            <div class="bbcf-wardrobe-summary">
+                                ${buildWardrobeSummaryHtml(settings)}
                             </div>
                         </div>
-                        <div class="bbcf-wardrobe-options">
-                            <label class="checkbox_label"><input type="checkbox" id="bbcf-wardrobe-enabled" ${settings.wardrobeEnabled ? 'checked' : ''}> <span>Использовать встроенный гардероб</span></label>
-                            <label class="checkbox_label"><input type="checkbox" id="bbcf-wardrobe-desc" ${settings.wardrobeSendDescription ? 'checked' : ''}> <span>Учитывать описания образов</span></label>
-                            <label class="checkbox_label"><input type="checkbox" id="bbcf-wardrobe-images" ${settings.wardrobeSendImages ? 'checked' : ''}> <span>Прикладывать картинки образов</span></label>
-                        </div>
-                        <div class="bbcf-wardrobe-summary">
-                            ${buildWardrobeSummaryHtml(settings)}
-                        </div>
-                    </div>
+                    </details>
                 </details>
 
                 <details class="bbcf-section bbcf-settings-details" id="bbcf-page-settings">
