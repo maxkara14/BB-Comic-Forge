@@ -4,6 +4,15 @@
 
 ## Русский
 
+### Корректировка и очистка черновика — 2026-10-10 (без изменения версии)
+
+- Добавлена корректировка текущего черновика по запросу: модель получает контекст и текущее содержимое, а генерация изображения запускается отдельно.
+- Ошибки и неполные корректировки сохраняют прежние поля и запрос пользователя. Отмена прекращает ожидание; поздние ответы после отмены, смены чата, закрытия окна или ручных правок не применяются.
+- Добавлена очистка сцены, описания персонажей, панелей, реплик, вставок и SFX с отменой последней очистки. Настройки страницы, название и референсы сохраняются; пустые поля не заменяются стандартным содержимым при повторном открытии.
+- Исправлено сохранение старых вставок, когда ИИ возвращает пустой массив `inserts`.
+- На телефонах кнопки пресетов и включения расширения расположены в двух равных колонках под статусом; шапка на компьютере сохраняет прежний вид.
+- Добавлены проверки корректировки через все текстовые подключения, очистки с отменой, ошибок и защиты от поздних результатов; интерфейс проверен на широкой и мобильной панели.
+
 ### Параметры изображений и выбор модели — 2026-10-10 (без изменения версии)
 
 - Добавлены отдельные режимы OpenAI-compatible, GPT Image 1 / 1.5 / Mini, GPT Image 2, GPT Image 2.5 и Grok Imagine Image 2.0. Параметры сохраняются в профилях подключения.
@@ -36,6 +45,15 @@
 История начата с этого файла. Ранние изменения не реконструируются полностью; даты и ссылки на коммиты выше взяты из Git.
 
 ## English
+
+### Draft revision and clearing — 2026-10-10 (no version change)
+
+- Added revision requests using the current draft and chat context; image generation remains a separate action.
+- Errors and incomplete revisions preserve previous fields and the user's request. Cancellation stops waiting; late replies after cancellation, chat changes, closing the window or manual edits are ignored.
+- Added clear and undo for scene, character descriptions, panel notes, dialogue, inserts and SFX. Page settings, title and references remain intact; cleared fields do not regain default content when reopened.
+- Fixed stale inserts when the model returns an empty `inserts` array.
+- On phones, preset and enable controls occupy two equal columns below the status; the desktop header retains its existing layout.
+- Added coverage for all text connections, clear/undo, errors and late replies; checked the interface at desktop and mobile widths.
 
 ### Image parameters and model picker — 2026-10-10 (no version change)
 

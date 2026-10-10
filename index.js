@@ -84,6 +84,7 @@ import { getWardrobeActiveEntries } from './src/wardrobe/selectors.js';
 import { createWardrobeController } from './src/wardrobe/controller.js';
 import { createDraftStateController } from './src/draft/state.js';
 import { createAiDraftController } from './src/draft/ai.js';
+import { createDraftActionsController } from './src/draft/actions.js';
 
 const state = {
     modal: null,
@@ -242,11 +243,23 @@ const {
     getContext: () => SillyTavern.getContext(),
     getSettings,
     getSupportedTavernDraftProfiles,
+    getSavedDraftProfileKey,
+    readDraftFromModal,
     notifyError: message => toastr.error(message, 'Comic Forge'),
     notifySuccess: message => toastr.success(message, 'Comic Forge'),
     refreshForgeWorkflowSummary,
     saveDraftFromModal,
     substituteParams,
+});
+
+const draftActions = createDraftActionsController({
+    runAiDraft: handleAiDraftFromModal,
+    cancelAiDraft: cancelActiveGeneration,
+    isBusy: () => state.generating,
+    getScopeKey: getSavedDraftProfileKey,
+    getSavedDraft,
+    saveDraftFromModal,
+    refreshForgeWorkflowSummary,
 });
 
 const {
@@ -389,6 +402,7 @@ function handleContextChanged() {
 function refreshModalForCurrentContext() {
     if (!state.modal?.isConnected || state.generating) return;
     applySavedDraftToModal(state.modal, getSavedDraft());
+    draftActions.reset(state.modal);
     state.pendingComic = null;
     const preview = state.modal.querySelector('#bbcf-preview-content');
     if (preview) preview.innerHTML = '<p class="bbcf-hint">Готовая страница появится здесь.</p>';
@@ -810,6 +824,7 @@ function updateSelectOptions(select, html, value) {
 }
 
 function updateFloatingButton() {
+    if (state.modal?.isConnected) draftActions.updateBusy(state.modal);
     const settings = getSettings();
     let button = document.getElementById(FAB_ID);
     let wrapper = document.getElementById(FAB_WRAPPER_ID);
@@ -992,10 +1007,7 @@ function openForgeModal(options = {}) {
         }
     }
     updateSendToChatButton(root);
-    root.querySelector('#bbcf-ai-draft')?.addEventListener('click', async () => {
-        await fillDraftFromAi(root);
-        refreshForgeWorkflowSummary(root);
-    });
+    draftActions.bind(root);
     root.querySelector('#bbcf-draft-save-style')?.addEventListener('click', () => saveStyleFromDraft(root));
     root.querySelector('#bbcf-draft-save-layout')?.addEventListener('click', () => saveLayoutFromDraft(root));
     bindPresetLibraryActions(root, { source: 'forge' });
@@ -1073,6 +1085,25 @@ function cancelActiveGeneration() {
 function throwIfGenerationStale(controller) {
     throwIfAborted(controller?.signal);
     if (!controller || state.generationAbortController !== controller) throw createCancellationError();
+}
+
+async function handleAiDraftFromModal(root, options = {}) {
+    if (state.generating) return false;
+    const controller = startGenerationSession();
+    const scope = getSavedDraftProfileKey();
+    const chat = SillyTavern.getContext().chat;
+    state.generating = true;
+    updateFloatingButton();
+    updateSendToChatButton(root);
+    try {
+        return await fillDraftFromAi(root, { ...options, signal: controller.signal });
+    } finally {
+        finishGenerationSession(controller);
+        state.generating = false;
+        if (scope !== getSavedDraftProfileKey() || chat !== SillyTavern.getContext().chat) refreshModalForCurrentContext();
+        updateFloatingButton();
+        updateSendToChatButton(root);
+    }
 }
 
 async function handleGenerateFromModal(root) {

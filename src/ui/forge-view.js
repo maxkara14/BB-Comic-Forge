@@ -116,6 +116,21 @@ export function renderForgeHtml(settings, savedDraft) {
                         <textarea id="bbcf-draft-scene" class="text_pole" rows="5" placeholder="Что должно произойти на странице. Можно писать по-русски.">${escapeHtml(savedDraft.scene)}</textarea>
                     </div>
                             <button class="menu_button bbcf-ai-draft-action" type="button" id="bbcf-ai-draft"><i class="fa-solid fa-scroll"></i><span>Черновик из чата</span></button>
+                            <div class="bbcf-draft-actions">
+                                <button class="menu_button" type="button" id="bbcf-draft-revise" aria-expanded="false" aria-controls="bbcf-draft-revision"><i class="fa-solid fa-pen-to-square"></i><span>Скорректировать черновик</span></button>
+                                <button class="menu_button bbcf-draft-clear" type="button" id="bbcf-draft-clear"><i class="fa-solid fa-eraser"></i><span>Очистить</span></button>
+                            </div>
+                            <div id="bbcf-draft-revision" class="bbcf-draft-revision" hidden>
+                                <label for="bbcf-draft-revision-text">Что изменить в черновике</label>
+                                <textarea id="bbcf-draft-revision-text" class="text_pole" rows="3" maxlength="4000" placeholder="Возьми драку в конце сообщения. Разговор в начале пропусти."></textarea>
+                                <div class="bbcf-draft-actions">
+                                    <button class="menu_button" type="button" id="bbcf-draft-revise-apply"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Применить правки</span></button>
+                                    <button class="menu_button" type="button" id="bbcf-draft-revise-close">Закрыть</button>
+                                    <button class="menu_button" type="button" id="bbcf-draft-revise-cancel" hidden>Отменить запрос</button>
+                                </div>
+                            </div>
+                            <p id="bbcf-draft-action-status" class="bbcf-hint bbcf-draft-action-status" role="status"></p>
+                            <button class="menu_button bbcf-draft-clear-undo" type="button" id="bbcf-draft-clear-undo" hidden><i class="fa-solid fa-rotate-left"></i><span>Вернуть черновик</span></button>
                         </div>
                     </details>
                     <div class="bbcf-workflow-stack">

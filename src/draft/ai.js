@@ -24,6 +24,8 @@ export function createAiDraftController(dependencies) {
         fetchJson,
         getContext,
         getSettings,
+        getSavedDraftProfileKey,
+        readDraftFromModal,
         getSupportedTavernDraftProfiles,
         notifyError,
         notifySuccess,
@@ -32,23 +34,33 @@ export function createAiDraftController(dependencies) {
         substituteParams,
     } = dependencies;
 
-    async function fillDraftFromAi(root, { throwErrors = false, signal = null } = {}) {
-        const button = root.querySelector('#bbcf-ai-draft');
+    async function fillDraftFromAi(root, { throwErrors = false, signal = null, instruction = '' } = {}) {
+        const revision = String(instruction).trim();
+        const original = readDraftFromModal(root);
+        const scope = getSavedDraftProfileKey();
+        const chat = getContext().chat;
+        const button = root.querySelector(revision ? '#bbcf-draft-revise-apply' : '#bbcf-ai-draft');
         const previousHtml = button?.innerHTML;
         if (button) {
             button.disabled = true;
-            button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Черновик...';
+            button.innerHTML = revision ? '<i class="fa-solid fa-spinner fa-spin"></i> Корректировка...' : '<i class="fa-solid fa-spinner fa-spin"></i> Черновик...';
         }
         try {
             throwIfAborted(signal);
-            const prompt = buildDraftPrompt(root);
-            const raw = await runDraftPrompt(prompt, signal);
+            const prompt = buildDraftPrompt(root) + (revision ? `\n\nRevise the current comic draft according to the user's request below. Use the chat context to select the requested moment, including a later part of the same message if requested. Preserve unaffected details and character continuity. Return the COMPLETE updated draft in the original JSON schema, not a patch. Use empty arrays for removed bubbles, inserts or SFX. The current editor fields below contain plain text and pipe-separated lines. Do not generate an image.\n\nCurrent draft:\n${JSON.stringify(original)}\n\nUser revision request:\n${revision}` : '');
+            const raw = await runCancellableDraftPrompt(prompt, signal);
             throwIfAborted(signal);
             const draft = extractJsonObject(raw);
+            if (revision && !isCompleteRevision(draft)) {
+                throw new Error('Модель вернула неполную корректировку. Прежний черновик сохранён.');
+            }
+            if (!root.isConnected || scope !== getSavedDraftProfileKey() || chat !== getContext().chat) throw createCancellationError();
+            if (JSON.stringify(readDraftFromModal(root)) !== JSON.stringify(original)) throw new Error('Черновик изменён во время запроса. Ответ не применён; ваши правки сохранены.');
             applyAiDraft(root, draft);
             saveDraftFromModal(root);
             refreshForgeWorkflowSummary(root);
-            notifySuccess('Черновик комикса собран.');
+            notifySuccess(revision ? 'Черновик скорректирован. Изображение можно сгенерировать отдельно.' : 'Черновик комикса собран.');
+            return true;
         } catch (error) {
             if (isAbortError(error)) {
                 console.info('[BB Comic Forge] draft generation cancelled');
@@ -57,12 +69,32 @@ export function createAiDraftController(dependencies) {
                 notifyError(error?.message || String(error));
             }
             if (throwErrors) throw error;
+            return false;
         } finally {
             if (button) {
                 button.disabled = false;
                 button.innerHTML = previousHtml;
             }
         }
+    }
+
+    function isCompleteRevision(draft) {
+        if (typeof draft.scene !== 'string' || !draft.scene.trim()) return false;
+        if (Object.hasOwn(draft, 'title') && typeof draft.title !== 'string') return false;
+        if (!Array.isArray(draft.panel_notes) || !draft.panel_notes.length || draft.panel_notes.length > MAX_PANELS) return false;
+        if (draft.panel_notes.some(note => typeof note !== 'string' || !note.trim())) return false;
+        return ['bubbles', 'inserts', 'sfx'].every(key => Array.isArray(draft[key])
+            && draft[key].every(item => item && typeof item === 'object' && typeof item.text === 'string'));
+    }
+
+    async function runCancellableDraftPrompt(prompt, signal) {
+        if (!signal) return runDraftPrompt(prompt);
+        throwIfAborted(signal);
+        let cancel;
+        const aborted = new Promise((_resolve, reject) => { cancel = () => reject(createCancellationError()); });
+        signal.addEventListener('abort', cancel, { once: true });
+        try { return await Promise.race([runDraftPrompt(prompt, signal), aborted]); }
+        finally { signal.removeEventListener('abort', cancel); }
     }
 
     function buildDraftPrompt(root) {
@@ -253,7 +285,7 @@ export function createAiDraftController(dependencies) {
             setValue(root, '#bbcf-draft-sfx', sfxText);
         }
         const inserts = draftToInsertLines(draft.inserts);
-        if (inserts) setValue(root, '#bbcf-draft-inserts', inserts);
+        if (Object.hasOwn(draft, 'inserts')) setValue(root, '#bbcf-draft-inserts', inserts);
     }
 
     function draftToInsertLines(value) {

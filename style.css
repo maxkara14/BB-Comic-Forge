@@ -2789,12 +2789,19 @@ body.bbcf-lightbox-open {
 
 @media (max-width: 420px) {
     #bbcf-settings .bbcf-dashboard-heading {
-        flex-wrap: wrap;
+        flex-direction: column;
+        align-items: stretch;
     }
 
     #bbcf-settings .bbcf-dashboard-heading-actions {
-        width: 100%;
-        justify-content: flex-end;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #bbcf-settings .bbcf-dashboard-heading-actions > * {
+        justify-content: center;
+        min-width: 0;
+        margin: 0;
     }
 
     .bbcf-modal-presets span {
@@ -3135,6 +3142,18 @@ body.bbcf-lightbox-open {
     width: 100%;
     min-height: 38px;
 }
+
+.bbcf-draft-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.bbcf-draft-actions .menu_button { flex: 1 1 150px; min-width: 0; margin: 0; padding: 8px 10px; white-space: normal; line-height: 1.35; }
+.bbcf-draft-actions .bbcf-draft-clear { flex: 0 1 auto; color: #e1afb5; }
+.bbcf-draft-revision { display: grid; gap: 6px; margin-top: 10px; padding: 10px; border: 1px solid var(--SmartThemeBorderColor, #39465e); border-radius: 8px; background: rgba(0, 0, 0, .1); }
+.bbcf-draft-revision[hidden], .bbcf-draft-clear-undo[hidden], #bbcf-draft-revise-cancel[hidden] { display: none !important; }
+.bbcf-draft-revision label { font-size: .82rem; }
+.bbcf-draft-revision .text_pole { width: 100%; min-width: 0; margin: 0; resize: vertical; }
+.bbcf-draft-revision .bbcf-draft-actions { margin-top: 0; }
+.bbcf-draft-action-status { margin: 8px 0; }
+.bbcf-draft-action-status:empty { display: none; }
+.bbcf-draft-clear-undo { margin-top: 8px; }
 
 .bbcf-form {
     display: grid;
