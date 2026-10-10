@@ -126,7 +126,7 @@ Select the mode manually because proxy model names may be aliases. Support for t
 
 If a Grok proxy returns HTTP 400 requiring `images[].image_url`, Comic Forge retries the same `/images/edits` endpoint once with `images: [{ image_url: "data:…" }]`. All references, the prompt, resolution, aspect ratio, and quality are preserved. Other errors do not trigger this retry.
 
-The browser console records the endpoint used and the number of attached files, without logging the API key or prompt contents.
+For every provider, `[BB Comic Forge] Image request` in the browser console lists the API type, request mode, panel number, counts and ordered image roles: `character`, `style`, `wardrobe`, and `previous`. `Image response received` records a response; `Image request failed` records a request error. `Reference image skipped` indicates a loading failure, and `text-only-fallback` indicates an OpenAI Images retry without images. Logs omit keys, prompts, images and file paths. They confirm the extension's submitted request contents, not whether the model or proxy used those images.
 
 ### AI drafting
 
@@ -178,15 +178,19 @@ Portable files exclude API keys, endpoints, connection profiles, the current sce
 
 The library supports search, filters, preview, application, updating from current settings, renaming, duplication, export, and deletion. On desktop, choose 2, 4, or 6 library columns. On phones, the library temporarily uses one column without changing the saved preference.
 
-After applying a draft preset, the selected style and layout names are refreshed in the editor and settings summary. Deleting a draft preset can also remove its linked saved style and layout only when other presets, current settings, and saved drafts do not use them. Direct deletion of a style or layout shows every affected reference before confirmation.
+After applying a draft preset, the selected style and layout names are refreshed in the editor and settings summary. The deletion dialog lists the linked saved style and layout and where they are used. Delete only the preset to retain these library items, or explicitly delete it together with them. Combined deletion switches affected settings, other presets and saved drafts to the default style and layout while preserving scenes, dialogue and references. Cancel changes nothing. Direct deletion of a style or layout shows every affected reference before confirmation.
 
 ## 🧠 Image prompt assembly
 
-**Image prompt** shows the text Comic Forge prepares for the model. Images do not appear there as base64; supported image files are attached to the request separately.
+**Image prompt** shows the base page text. At submission, the provider adds role instructions for loaded references and its format-specific parameters. Images are attached separately and do not appear in this block as base64; console diagnostics show the submitted reference composition.
 
 In per-panel mode, copy one panel's prompt or all prompts. Whole-page mode provides a single page prompt.
 
 **Chat message context** is used only by AI drafting by default. Enable **Add message context to the image prompt** to include it directly in image generation.
+
+Dialogue and SFX retain the language supplied by the draft. Chibi inserts are not limited to comedy; their descriptions define expressions, treatment and placement. Wrapper instructions do not impose borders, identical lighting or an unchanged mood across panels. Selected style, layout, negative prompt and reference settings still contribute to the request.
+
+In single-page requests, each panel block contains its own dialogue, inserts and SFX. Consecutive lines from one speaker are grouped without changing their order or text. The default draft prompt coordinates speaker and balloon placement; saved user prompts are not automatically rewritten.
 
 In economical mode, shared page information, character lock, references, wardrobe, and context are included once instead of being repeated for every panel.
 

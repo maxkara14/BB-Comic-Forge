@@ -8,6 +8,8 @@ export const DRAFT_CAST_DIALOGUE_RULES = [
     '- Do not force every participant into every panel. Preserve close-ups, reaction shots, detail shots, and readable composition.',
     '- Every speech or thought bubble must include a "speaker" field using the character name from character_lock.',
     '- The speaker field is metadata for composition and must never be repeated inside the visible bubble text.',
+    '- For panels with dialogue, specify the named speakers\' left/right or foreground/background placement in panel_notes and choose bubble positions consistent with that staging. Keep consecutive lines from one speaker together near that speaker; do not spread them across opposite sides just to balance the page.',
+    '- Preserve each source line\'s speaker independently of reading order or bubble position. Speech tails must connect to that speaker; explicitly identify off-panel speakers instead of assigning their lines to a visible listener.',
     '- When multiple bubbles are used, they must form one coherent exchange anchored in the latest roleplay beat, not isolated generic phrases.',
     '- Each later bubble must respond to, clarify, challenge, or advance an earlier line or visible action.',
 ].join('\n');

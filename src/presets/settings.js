@@ -253,36 +253,55 @@ export function createPresetSettingsController(dependencies) {
         return true;
     }
 
-    function deleteDraftPromptPreset(presetId = '') {
+    async function deleteDraftPromptPreset(presetId = '') {
         const settings = getSettings();
         const selectedId = String(presetId || settings.activeDraftPromptPresetId || '');
         const preset = settings.draftPromptPresets.find(item => item.id === selectedId);
         if (!preset) return false;
-        if (!window.confirm(`Удалить набор черновика "${preset.label}"?`)) return;
         const styleId = savedPresetId(preset.stylePreset);
         const layoutId = savedPresetId(preset.layout);
         const linkedStyle = styleId ? settings.savedStyles.find(item => item.id === styleId) : null;
         const linkedLayout = layoutId ? settings.savedLayouts.find(item => item.id === layoutId) : null;
         const styleUsage = linkedStyle && getSavedItemUsage(settings, 'stylePreset', `saved:${styleId}`, selectedId);
         const layoutUsage = linkedLayout && getSavedItemUsage(settings, 'layout', `saved:${layoutId}`, selectedId);
-        const styleUsedElsewhere = styleUsage && hasSavedItemUsage(styleUsage);
-        const layoutUsedElsewhere = layoutUsage && hasSavedItemUsage(layoutUsage);
-        const removable = [
-            linkedStyle && !styleUsedElsewhere ? `стиль "${linkedStyle.label}"` : '',
-            linkedLayout && !layoutUsedElsewhere ? `макет "${linkedLayout.label}"` : '',
+        const linkedNotes = [
+            linkedStyle ? `Стиль "${linkedStyle.label}"\n${savedItemUsageNote(styleUsage) || 'Больше нигде не используется.'}` : '',
+            linkedLayout ? `Макет "${linkedLayout.label}"\n${savedItemUsageNote(layoutUsage) || 'Больше нигде не используется.'}` : '',
         ].filter(Boolean);
-        const removeLinked = removable.length > 0 && window.confirm(
-            `Удалить вместе с пресетом ${removable.join(' и ')}?\n\n` +
-            'Они не используются в других наборах, текущих настройках и сохранённых черновиках. При отказе останутся в библиотеке.',
-        );
+        const content = `<h3>Удалить пресет "${escapeHtml(preset.label)}"?</h3>`
+            + (linkedNotes.length
+                ? linkedNotes.map(note => `<p>${escapeHtml(note).replace(/\n/g, '<br>')}</p>`).join('')
+                    + '<p>«Удалить только пресет» оставит стиль и макет в библиотеке.</p>'
+                    + '<p>«Удалить вместе со стилем и макетом» удалит перечисленные элементы. Использующие их настройки, другие пресеты и сохранённые черновики переключатся на стандартные стиль и макет. Содержимое сцен, реплики и референсы сохранятся.</p>'
+                : '<p>Связанных сохранённых стиля и макета нет. Встроенные элементы останутся доступны.</p>');
+        const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
+            okButton: 'Удалить только пресет',
+            cancelButton: 'Отмена',
+            defaultResult: POPUP_RESULT.CANCELLED,
+            leftAlign: true,
+            allowVerticalScrolling: true,
+            customButtons: linkedNotes.length ? [{ text: 'Удалить вместе со стилем и макетом', result: POPUP_RESULT.CUSTOM1 }] : [],
+        });
+        const result = await popup.show();
+        if (result !== POPUP_RESULT.AFFIRMATIVE && result !== POPUP_RESULT.CUSTOM1) return false;
+        if (getSettings() !== settings) return false;
+        const currentPreset = settings.draftPromptPresets.find(item => item.id === selectedId);
+        if (!currentPreset) return false;
+        if (savedPresetId(currentPreset.stylePreset) !== styleId || savedPresetId(currentPreset.layout) !== layoutId) {
+            notifyWarning('Связанные стиль или макет изменились. Откройте удаление пресета заново.');
+            return false;
+        }
+        const removeLinked = result === POPUP_RESULT.CUSTOM1 && linkedNotes.length > 0;
         settings.draftPromptPresets = settings.draftPromptPresets.filter(item => item.id !== selectedId);
         if (settings.activeDraftPromptPresetId === selectedId) settings.activeDraftPromptPresetId = '';
         if (removeLinked) {
-            if (styleId && linkedStyle && !styleUsedElsewhere) {
+            if (styleId && linkedStyle) {
+                replaceDraftPresetStyleReferences(settings, styleId);
                 removeSavedStyleReferences(settings, styleId);
                 settings.savedStyles = settings.savedStyles.filter(item => item.id !== styleId);
             }
-            if (layoutId && linkedLayout && !layoutUsedElsewhere) {
+            if (layoutId && linkedLayout) {
+                replaceDraftPresetLayoutReferences(settings, layoutId);
                 removeSavedLayoutReferences(settings, layoutId);
                 settings.savedLayouts = settings.savedLayouts.filter(item => item.id !== layoutId);
             }
@@ -298,10 +317,6 @@ export function createPresetSettingsController(dependencies) {
     function savedPresetId(value) {
         const match = /^saved:(.+)$/.exec(String(value || ''));
         return match?.[1] || '';
-    }
-
-    function hasSavedItemUsage(usage) {
-        return usage.presets.length > 0 || usage.currentSettings || usage.draftCount > 0;
     }
 
     function savedItemUsageNote(usage) {
@@ -700,7 +715,7 @@ export function createPresetSettingsController(dependencies) {
                 } else if (action === 'export') {
                     exportPortablePreset(root, source, presetId);
                 } else if (action === 'delete') {
-                    if (deleteDraftPromptPreset(presetId)) refreshCards();
+                    if (await deleteDraftPromptPreset(presetId)) refreshCards();
                 }
             } catch (error) {
                 reportPresetError(`preset ${action} failed`, error);

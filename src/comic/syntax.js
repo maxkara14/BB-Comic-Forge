@@ -92,10 +92,10 @@ export function buildPanelInsertPrompt(inserts) {
     const lines = inserts.map(insert =>
         `- ${insert.type} insert at ${insert.position}: ${insert.text}`).join('\n');
     return [
-        `Integrate these small manga/webtoon overlay cut-in inserts inside this panel composition:`,
+        `Integrate these supplied overlay inserts inside this panel composition:`,
         lines,
-        `Each insert must be a small bordered mini-panel or sticker drawn as part of the same image, matching the panel's style, lighting, linework, and color.`,
-        `Use detail inserts for close-ups of hands, lips, eyes, weapons, blood, objects, or symbols; use chibi inserts only for comic or exaggerated reactions.`,
+        `Draw each insert as part of the same image, using its supplied type, description, position and requested visual treatment. Do not impose a border, lighting treatment or expression that conflicts with the insert description.`,
+        `A chibi insert changes proportions within that insert only; do not change main-panel character proportions unless the draft requests it. Use the expression and gesture supplied in the insert description without inventing a comic or exaggerated reaction.`,
     ].join('\n');
 }
 

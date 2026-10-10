@@ -4,6 +4,7 @@ import { fetchUrlAsDataUrl } from '../images/browser.js';
 import { parseImageDataUrl } from '../providers/responses.js';
 import { isAbortError, throwIfAborted } from '../providers/transport.js';
 import { normalizeStyleReferences } from '../wardrobe/normalizers.js';
+import { referenceLogDetails } from './reference-log.js';
 
 export function createReferenceService(dependencies) {
     const { getSettings, getWardrobeActiveEntries } = dependencies;
@@ -30,14 +31,16 @@ export function createReferenceService(dependencies) {
                 });
             } catch (error) {
                 if (isAbortError(error)) throw error;
-                console.warn('[BB Comic Forge] reference skipped', ref.path, error);
+                console.warn('[BB Comic Forge] Reference image skipped', { reason: 'load-failed', ...referenceLogDetails([ref]) });
             }
         }
         if (settings.wardrobeEnabled && settings.wardrobeSendImages) {
             loaded.push(...await collectWardrobeReferenceImages(signal));
         }
         const previous = await collectPreviousContextReferenceImages(previousImagePaths, signal);
-        return [...loaded, ...previous];
+        const references = [...loaded, ...previous];
+        console.info('[BB Comic Forge] Reference images loaded', referenceLogDetails(references));
+        return references;
     }
 
     async function collectWardrobeReferenceImages(signal = null) {
@@ -61,7 +64,7 @@ export function createReferenceService(dependencies) {
                 });
             } catch (error) {
                 if (isAbortError(error)) throw error;
-                console.warn('[BB Comic Forge] wardrobe reference skipped', item, error);
+                console.warn('[BB Comic Forge] Reference image skipped', { reason: 'load-failed', ...referenceLogDetails([{ kind: 'wardrobe' }]) });
             }
         }
         return loaded;
@@ -86,7 +89,7 @@ export function createReferenceService(dependencies) {
                 });
             } catch (error) {
                 if (isAbortError(error)) throw error;
-                console.warn('[BB Comic Forge] previous context image skipped', path, error);
+                console.warn('[BB Comic Forge] Reference image skipped', { reason: 'load-failed', ...referenceLogDetails([{ kind: 'previous' }]) });
             }
         }
         return loaded;

@@ -13,9 +13,24 @@ import {
     parseImageDataUrl,
 } from './responses.js';
 import { throwIfAborted } from './transport.js';
+import { referenceLogDetails } from '../generation/reference-log.js';
 
 export function createImageProviderGenerator(dependencies) {
     const { getSettings, fetchJson, buildFullPrompt, buildReferenceInstruction } = dependencies;
+
+    async function requestImage(url, options, apiType, mode, panel, references = []) {
+        throwIfAborted(options.signal);
+        const details = { apiType, mode, panel: panel.number, ...referenceLogDetails(references) };
+        console.info('[BB Comic Forge] Image request', details);
+        try {
+            const result = await fetchJson(url, options);
+            console.info('[BB Comic Forge] Image response received', details);
+            return result;
+        } catch (error) {
+            console.warn('[BB Comic Forge] Image request failed', { ...details, apiStatus: Number(error?.apiStatus) || null });
+            throw error;
+        }
+    }
 
     async function generateOpenAiImage(panel, references = [], signal = null) {
         const settings = getSettings();
@@ -27,9 +42,8 @@ export function createImageProviderGenerator(dependencies) {
             } catch (error) {
                 if (!isOpenAiImageEditUnsupported(error)) throw error;
                 console.warn('[BB Comic Forge] OpenAI Images edit endpoint is unavailable; retrying with text-only references.', {
-                    editEndpoint: `${baseUrl}/images/edits`,
-                    fallbackEndpoint: `${baseUrl}/images/generations`,
-                    referenceCount: references.length,
+                    apiType: 'openai-images', mode: 'text-only-fallback', panel: panel.number,
+                    omittedReferences: referenceLogDetails(references),
                 });
             }
         }
@@ -40,13 +54,12 @@ export function createImageProviderGenerator(dependencies) {
             ...buildImageRequestOptions(settings, panel),
             n: 1,
         };
-        logOpenAiImageRoute(url, 'generation', 0);
-        const result = await fetchJson(url, {
+        const result = await requestImage(url, {
             method: 'POST',
             headers: imageApiHeaders(settings),
             body: JSON.stringify(body),
             signal,
-        });
+        }, 'openai-images', 'generation', panel);
         return extractOpenAiImageResult(result, signal);
     }
 
@@ -72,18 +85,13 @@ export function createImageProviderGenerator(dependencies) {
             const file = await referenceToImageFile(references[index], index);
             formData.append(imageField, file, file.name);
         }
-        logOpenAiImageRoute(url, 'edit', references.length);
-        const result = await fetchJson(url, {
+        const result = await requestImage(url, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${settings.apiKey || ''}` },
             body: formData,
             signal,
-        });
+        }, 'openai-images', 'edit', panel, references);
         return extractOpenAiImageResult(result, signal);
-    }
-
-    function logOpenAiImageRoute(endpoint, mode, referenceCount) {
-        console.info('[BB Comic Forge] OpenAI Images request', { endpoint, mode, referenceCount });
     }
 
     async function generateGrokImage(panel, references, signal) {
@@ -103,21 +111,19 @@ export function createImageProviderGenerator(dependencies) {
         if (images.length === 1) body.image = images[0];
         else if (images.length) body.images = images;
         const url = `${normalizeOpenAiBase(settings.endpoint)}/images/${images.length ? 'edits' : 'generations'}`;
-        logOpenAiImageRoute(url, images.length ? 'grok-edit' : 'grok-generation', images.length);
-        const request = payload => fetchJson(url, {
+        const request = (payload, mode) => requestImage(url, {
             method: 'POST', headers: imageApiHeaders(settings), body: JSON.stringify(payload), signal,
-        });
+        }, 'openai-images', mode, panel, references);
         let result;
         try {
-            result = await request(body);
+            result = await request(body, images.length ? 'grok-edit' : 'grok-generation');
         } catch (error) {
             const details = `${error?.apiBody || ''} ${error?.message || ''}`;
             const requiresImageUrl = /images(?:\[\]|\[\d+\])\.image_url\b[^\r\n]*?(?:required|missing)/i.test(details);
             if (!images.length || Number(error?.apiStatus) !== 400 || !requiresImageUrl) throw error;
             throwIfAborted(signal);
             const { image: _image, images: _images, ...options } = body;
-            logOpenAiImageRoute(url, 'grok-edit-image-url', images.length);
-            result = await request({ ...options, images: images.map(image => ({ image_url: image.url })) });
+            result = await request({ ...options, images: images.map(image => ({ image_url: image.url })) }, 'grok-edit-image-url');
         }
         return extractOpenAiImageResult(result, signal);
     }
@@ -163,7 +169,7 @@ export function createImageProviderGenerator(dependencies) {
         const url = `${normalizeOpenAiBase(settings.endpoint)}/chat/completions`;
         const fullPrompt = `${buildReferenceInstruction(references)}\n\n${buildFullPrompt(panel)}\n\n[aspect_ratio: ${panel.aspectRatio}] [image_size: ${panel.imageSize || settings.imageSize}]`;
         const imageParts = references.map(ref => ({ type: 'image_url', image_url: { url: ref.dataUrl } }));
-        const result = await fetchJson(url, {
+        const result = await requestImage(url, {
             method: 'POST',
             headers: imageApiHeaders(settings),
             signal,
@@ -173,7 +179,7 @@ export function createImageProviderGenerator(dependencies) {
                 modalities: ['image', 'text'],
                 stream: false,
             }),
-        });
+        }, 'openai-chat', 'chat/completions', panel, references);
         const found = extractImageFromChatResponse(result);
         if (!found) throw new Error('OpenAI chat response did not contain image data.');
         return /^https?:\/\//i.test(found) ? fetchUrlAsDataUrl(found, signal) : found;
@@ -195,12 +201,12 @@ export function createImageProviderGenerator(dependencies) {
                 imageConfig: { aspectRatio, imageSize },
             },
         };
-        const result = await fetchJson(url, {
+        const result = await requestImage(url, {
             method: 'POST',
             headers: geminiApiHeaders(settings),
             signal,
             body: JSON.stringify(body),
-        });
+        }, 'gemini', 'generateContent', panel, references);
         const parts = result?.candidates?.[0]?.content?.parts || [];
         for (const part of parts) {
             if (part.inlineData?.data) return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
@@ -213,7 +219,7 @@ export function createImageProviderGenerator(dependencies) {
         const settings = getSettings();
         const endpoint = normalizeNaisteraEndpoint(settings.endpoint);
         const aspectRatio = settings.naisteraAspectRatio === 'auto' ? panel.aspectRatio : settings.naisteraAspectRatio;
-        const result = await fetchJson(endpoint, {
+        const result = await requestImage(endpoint, {
             method: 'POST',
             headers: imageApiHeaders(settings),
             signal,
@@ -225,7 +231,7 @@ export function createImageProviderGenerator(dependencies) {
                 reference_images: references.map(ref => ref.dataUrl),
                 reference_labels: references.map(ref => ref.name || ref.label || 'reference'),
             }),
-        });
+        }, 'naistera', 'reference_images', panel, references);
         if (result?.data_url) return result.data_url;
         throw new Error('Naistera response did not contain data_url.');
     }

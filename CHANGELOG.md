@@ -4,6 +4,32 @@
 
 ## Русский
 
+### Реплики рядом с планом панели — 2026-10-11 (без изменения версии)
+
+- В запросе цельной страницы реплики, вставки и SFX теперь расположены внутри блока соответствующей панели. Последовательные реплики одного говорящего сгруппированы с сохранением текста, порядка и позиций.
+- В обоих режимах уточнено согласование расстановки персонажей с пузырями. Стандартный промпт черновика просит задавать положение говорящих и размещать последовательные реплики рядом с ними.
+- Добавлены проверки привязки к панели, групп говорящих, чередования реплик, закадровых персонажей и старых строк без имени говорящего.
+
+### Диагностика отправки референсов — 2026-10-11 (без изменения версии)
+
+- Для Gemini, OpenAI Chat, OpenAI Images, Grok и Naistera добавлены журналы запроса и ответа с количеством и порядком референсов персонажей, рисовки, гардероба и предыдущих страниц.
+- Отдельно отмечаются ошибки загрузки референсов, ошибки запросов, повтор Grok с форматом прокси и переход OpenAI Images на запрос без картинок.
+- Диагностика не выводит ключи, тела запросов, изображения, описания или пути файлов. Добавлены проверки всех подключений, повторов и состава журналов.
+
+### Явное удаление пресета и связанных элементов — 2026-10-11 (без изменения версии)
+
+- Окно удаления показывает связанные стиль и макет, их использование в других пресетах, текущих настройках и сохранённых черновиках.
+- Доступны удаление только пресета, удаление вместе со связанными элементами и отмена. Совместное удаление переводит затронутые ссылки на стандартные значения, сохраняя сцены, реплики и референсы.
+- Добавлены проверки выбора действий, обновления ссылок, сохранения одноимённых элементов с другими ID и защиты от изменения пресета во время подтверждения.
+
+### Инструкции изображения следуют черновику — 2026-10-11 (без изменения версии)
+
+- Убраны служебные ограничения чиби комичными реакциями и принудительный русский язык реплик/SFX. Текст передаётся в заданном языке без перевода.
+- В обоих режимах изображения передаются позиции пузырей и усилена привязка реплик к говорящему: несколько реплик одного героя нельзя распределять между другими персонажами или чиби-вставками.
+- Рамки, освещение вставок, детализация фонов и изменения состояния между панелями задаются черновиком и выбранными настройками.
+- Обновление старых промптов больше не заменяет пользовательские правила количества вставок на обязательные две вставки с одной чиби.
+- Добавлены проверки пути JSON → редактор → отдельные панели/цельная страница, языков, вставок и сохранения правил пользовательского промпта.
+
 ### Отмена сборки и защита черновика — 2026-10-11 (без изменения версии)
 
 - Во время сборки «Черновик из чата» меняется на «Отменить». Отмена сохраняет прежний черновик и блокирует позднее применение ответа; после неё можно сразу запустить новый запрос.
@@ -59,6 +85,33 @@
 История начата с этого файла. Ранние изменения не реконструируются полностью; даты и ссылки на коммиты выше взяты из Git.
 
 ## English
+
+### Dialogue alongside panel directions — 2026-10-11 (no version change)
+
+- Single-page requests now place dialogue, inserts and SFX inside their respective panel blocks. Consecutive lines from one speaker are grouped while preserving text, order and positions.
+- Both render modes now coordinate character staging with balloon placement. The default draft prompt requests speaker positions and nearby placement of consecutive lines.
+- Added checks for panel attribution, speaker groups, alternating dialogue, off-panel speakers and legacy lines without speaker names.
+
+### Reference request diagnostics — 2026-10-11 (no version change)
+
+- Gemini, OpenAI Chat, OpenAI Images, Grok and Naistera now log requests and responses with counts and ordered roles for character, style, wardrobe and previous-page images.
+- Failed reference loads, failed requests, Grok proxy format retries and OpenAI Images text-only fallback are logged separately.
+- Diagnostics omit keys, request bodies, images, descriptions and file paths. Added checks for every provider, retries and log contents.
+
+### Explicit preset and linked item deletion — 2026-10-11 (no version change)
+
+- The deletion dialog lists linked styles and layouts and their use in other presets, current settings and saved drafts.
+- Choose preset-only deletion, combined deletion or cancel. Combined deletion resets affected references to defaults while preserving scenes, dialogue and references.
+- Added checks for explicit choices, reference updates, preservation of same-name items with different IDs and preset changes while confirmation is pending.
+
+### Image instructions follow the draft — 2026-10-11 (no version change)
+
+- Both image modes now pass bubble positions and reinforce speaker attribution: multiple lines from one speaker must not be distributed among other characters or chibi inserts.
+
+- Removed wrapper restrictions limiting chibi to comic reactions and forcing Russian dialogue/SFX. Supplied text retains its language without translation.
+- Insert borders and lighting, background detail and changes across panels follow the draft and selected settings.
+- Legacy prompt migration no longer replaces user insert-count rules with mandatory two-insert quotas and exactly one chibi.
+- Added JSON → editor → panel/full-page coverage for languages, inserts and preservation of custom prompt rules.
 
 ### Draft cancellation and protection — 2026-10-11 (no version change)
 

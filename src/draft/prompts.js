@@ -5,20 +5,11 @@ import { normalizePortablePresetMetadata } from '../presets/portable.js';
 import { DEFAULT_DRAFT_PROMPT, DEFAULT_SETTINGS, DRAFT_CAST_DIALOGUE_RULES } from '../settings/defaults.js';
 
 export function migrateDraftPrompt(value) {
-    const insertExample = `"inserts": [
-    { "panel": 3, "type": "detail", "position": "bottom-left", "text": "small bordered close-up of tense fingers gripping fabric" },
-    { "panel": 4, "type": "chibi", "position": "bottom-right", "text": "tiny angry chibi reaction sticker holding a sign" }
-    ]`;
-    const oldInsertRules = [
-        '- Add 0 to 2 overlay inserts only when they clearly improve the page.',
-        '- Use detail inserts for important hands, lips, eyes, weapons, objects, symbols, or action emphasis.',
-        '- Use chibi inserts only for comic, embarrassed, jealous, startled, or exaggerated reactions.',
-        '- Do not add inserts to calm/simple pages or already crowded panels.',
-    ].join('\n');
+    const insertExample = '"inserts": []';
     const newInsertRules = [
-        '- Add at least 2 overlay inserts total.',
-        '- Include exactly 1 chibi insert for the whole comic page: use the user persona or the current character as a tiny comedic reaction that summarizes the situation, plot beat, or emotional moment.',
-        '- Include at least 1 detail insert focused on something important inside a panel: hands, lips, eyes, weapons, objects, symbols, clues, impact contact, or a decisive action emphasis.',
+        '- Add 0 to 2 overlay inserts when requested by the scene or draft instructions.',
+        '- Use each insert type and expression according to the draft; chibi inserts do not require comedy.',
+        '- Detail inserts are optional and should depict only requested scene content.',
         '- Place inserts only where they improve readability and do not overcrowd the panel.',
     ].join('\n');
     const rawPrompt = String(value || '');
@@ -41,9 +32,6 @@ export function migrateDraftPrompt(value) {
             '$1 "speaker": "Character name", $2',
         );
         prompt = `${prefix}${bubbleSection}`;
-    }
-    if (prompt.includes(oldInsertRules)) {
-        prompt = prompt.replace(oldInsertRules, newInsertRules);
     }
     if (prompt.includes('"fanservice_panel"')) {
         prompt = prompt.replace(

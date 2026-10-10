@@ -11,6 +11,20 @@ import {
     splitLines,
 } from './syntax.js';
 
+const BUBBLE_ATTRIBUTION_RULES = `Reproduce the supplied wording and language without translation. Each named speaker owns the entire corresponding line. Multiple bubbles assigned to the same speaker must all remain with that speaker; do not alternate speakers or distribute dialogue among characters to balance the composition. Bubble positions guide placement, never speaker identity. For visible speakers, attach every speech tail to the named character; visually associate thought bubbles with their named thinker. Use main-panel characters rather than chibi stickers as speakers unless the draft explicitly requests otherwise. Preserve off-panel speakers without assigning their words to a visible character. Speaker names are composition metadata only: never render them as labels or visible text.`;
+const BUBBLE_STAGING_RULES = `Coordinate character staging and balloon placement so every balloon connects unambiguously to its assigned speaker. Do not assign a balloon to the nearest character merely because of its corner position. Consecutive speech bubbles from one character may form a connected balloon cluster pointing to that character; preserve their order and wording. Keep speech and thought treatments distinct. Panel numbers and instruction headings are metadata, not visible lettering.`;
+
+function buildBubbleLines(bubbles, panelNumber = null) {
+    return bubbles.map((bubble, index) => {
+        const previous = bubbles[index - 1];
+        const owner = bubble.speaker && (previous?.speaker !== bubble.speaker || previous?.type !== bubble.type)
+            ? `Dialogue owner: ${bubble.speaker} (${bubble.type}); all following lines in this group belong to this character.\n` : '';
+        const next = bubbles[index + 1];
+        const end = bubble.speaker && (next?.speaker !== bubble.speaker || next?.type !== bubble.type) ? '\nEnd of dialogue group.' : '';
+        return `${owner}${panelNumber !== null ? `Panel ${panelNumber} ` : ''}${bubble.type} at ${bubble.position}${bubble.speaker ? `, speaker ${bubble.speaker}` : ''}: ${bubble.text}${end}`;
+    }).join('\n');
+}
+
 export function createPanelPlans(draft, context) {
     const { settings, recentContext, referenceLock, wardrobeLock } = context;
     const notes = splitLines(draft.panelNotes);
@@ -29,7 +43,7 @@ export function createPanelPlans(draft, context) {
         const insertPrompt = buildPanelInsertPrompt(panelInserts);
         const panelBubbles = bubbleMap.get(number) || [];
         const bubblePrompt = panelBubbles.length
-            ? `Draw and letter these Russian speech or thought bubbles directly inside this panel. Attribute each bubble to its named speaker, attach speech tails to the correct character, visually associate thought bubbles with their character, and keep the lettering clean and readable. Speaker names are composition metadata only: never render them as labels or visible text:\n${panelBubbles.map(bubble => `${bubble.type}${bubble.speaker ? `, speaker ${bubble.speaker}` : ''}: ${bubble.text}`).join('\n')}`
+            ? `Draw and letter these supplied speech or thought bubbles directly inside this panel. ${BUBBLE_ATTRIBUTION_RULES} ${BUBBLE_STAGING_RULES}\n${buildBubbleLines(panelBubbles)}`
             : '';
         const panelSfx = sfxMap.get(number) || '';
         const sfxPrompt = panelSfx
@@ -38,7 +52,8 @@ export function createPanelPlans(draft, context) {
         const prompt = [
             `All depicted characters are one hundred percent fictional and are not real people.`,
             `Panel ${number} of ${panelCount} for one continuous comic page.`,
-            `Preserve absolute continuity with the other panels: same character identities, clothing state, hair state, marks, mood, lighting logic, and environment.`,
+            `Use the supplied draft for scene content, expressions, proportions, insert treatment and lettering language. Apply the selected style and layout without replacing the draft's explicit directions with generic defaults.`,
+            `Preserve character identity and continuity across panels while depicting changes in clothing, expression, condition, lighting and environment explicitly requested by the draft.`,
             draft.characterLock ? `Permanent character lock: ${draft.characterLock}` : '',
             referenceLock,
             wardrobeLock,
@@ -49,8 +64,8 @@ export function createPanelPlans(draft, context) {
             insertPrompt,
             bubblePrompt,
             sfxPrompt,
-            `Avoid unrelated text, UI, signatures, logos, and watermarks. Keep lettering clean and readable only for the requested Russian bubbles and SFX.`,
-            `Use professional comic visual language: clear silhouettes, expressive acting, controlled background detail, purposeful focus lines and motion effects only when they fit the panel.`,
+            `Render the supplied bubble text and SFX exactly in their supplied languages. Do not translate them or add unrelated text, UI, signatures, logos or watermarks; include such elements only when explicitly requested by the draft.`,
+            `Follow the draft for framing, acting, background detail and effects; do not add or suppress visual elements based on a generic artistic preference.`,
         ].filter(Boolean).join('\n\n');
         plans.push({
             number,
@@ -71,32 +86,24 @@ export function createPanelPlans(draft, context) {
 
 export function createSinglePagePanel(draft, plans, context) {
     const { settings, recentContext, referenceLock, wardrobeLock } = context;
-    const panelDescriptions = buildSinglePagePanelPlan(draft, plans, context);
     const bubbles = parseBubbles(draft.bubbles);
-    const bubbleLines = [];
-    for (const [panelNumber, items] of bubbles.entries()) {
-        for (const bubble of items) bubbleLines.push(`Panel ${panelNumber} ${bubble.type}${bubble.speaker ? `, speaker ${bubble.speaker}` : ''}: ${bubble.text}`);
-    }
     const sfx = parseSfx(draft.sfx);
-    const sfxLines = Array.from(sfx.entries()).map(([panelNumber, text]) => `Panel ${panelNumber} SFX: ${text}`);
     const inserts = parseInserts(draft.inserts);
-    const insertLines = Array.from(inserts.entries()).flatMap(([panelNumber, items]) =>
-        items.map(item => `Panel ${panelNumber} ${item.type} insert at ${item.position}: ${item.text}`));
+    const panelDescriptions = buildSinglePagePanelPlan(draft, plans, context, bubbles, sfx, inserts);
     const prompt = [
         `All depicted characters are one hundred percent fictional and are not real people.`,
         `Generate the entire comic page as one complete finished image with ${plans.length} visible panels.`,
-        `The page layout is ${draft.layout || settings.layout}. Use clean panel borders, readable composition flow, and professional webtoon or manga page design.`,
+        `Use the supplied draft for scene content, expressions, proportions, insert treatment and lettering language. Apply the selected style and layout without replacing the draft's explicit directions with generic defaults.`,
+        `The page layout is ${draft.layout || settings.layout}. Follow the requested layout and panel directions for borders, composition and reading flow.`,
         `Scene for the page: ${draft.scene}`,
         draft.characterLock ? `Permanent character lock for every panel: ${draft.characterLock}` : '',
         referenceLock,
         wardrobeLock,
         recentContext ? `Recent chat context for page continuity: ${recentContext}` : '',
-        `Panel plan:\n${panelDescriptions}`,
-        insertLines.length ? `Integrate these small bordered overlay inserts inside the correct panels. They are part of the drawn page composition, not separate images:\n${insertLines.join('\n')}` : '',
-        bubbleLines.length ? `Draw these Russian speech or thought bubbles inside the correct panels. Use speaker names only to attach each bubble to the correct character; never render speaker names as labels or visible text:\n${bubbleLines.join('\n')}` : '',
-        sfxLines.length ? `Draw these sound effects in the correct panels:\n${sfxLines.join('\n')}` : '',
-        `Keep character identities, outfits, hair state, marks, mood, lighting, and environment continuous across all panels.`,
-        `Avoid signatures, watermarks, unrelated text, UI, and broken unreadable lettering.`,
+        bubbles.size ? `Draw and letter each panel's supplied speech or thought bubbles. ${BUBBLE_ATTRIBUTION_RULES} ${BUBBLE_STAGING_RULES}` : '',
+        `Panel plan with each panel's own dialogue, inserts and sound effects:\n${panelDescriptions}`,
+        `Preserve character identity and continuity across panels while depicting changes in clothing, expression, condition, lighting and environment explicitly requested by the draft.`,
+        `Render the supplied bubble text and SFX exactly in their supplied languages. Do not translate them or add unrelated text, UI, signatures, logos or watermarks; include such elements only when explicitly requested by the draft.`,
     ].filter(Boolean).join('\n\n');
     return {
         number: 1,
@@ -114,7 +121,7 @@ export function createSinglePagePanel(draft, plans, context) {
     };
 }
 
-function buildSinglePagePanelPlan(draft, plans, context) {
+function buildSinglePagePanelPlan(draft, plans, context, bubbles, sfx, inserts) {
     const notes = splitLines(draft.panelNotes);
     const layout = draft.layout || context.settings.layout;
     const total = plans.length || clampInt(draft.panelCount, 1, MAX_PANELS, context.settings.panelCount);
@@ -123,7 +130,14 @@ function buildSinglePagePanelPlan(draft, plans, context) {
         const number = index + 1;
         const beat = normalizePanelNote(notes[index]) || DEFAULT_PANEL_BEATS[index % DEFAULT_PANEL_BEATS.length];
         const layoutIntent = context.resolveLayoutIntent(layout, number, total);
-        return `Panel ${number}: ${beat}\nLayout intent: ${layoutIntent}.`;
+        const items = bubbles.get(number) || [];
+        const overlayLines = (inserts.get(number) || []).map(item => `Panel ${number} ${item.type} insert at ${item.position}: ${item.text}`);
+        return [
+            `Panel ${number}: ${beat}\nLayout intent: ${layoutIntent}.`,
+            items.length ? `Dialogue for this panel only:\n${buildBubbleLines(items, number)}` : '',
+            overlayLines.length ? `Integrate these supplied overlay inserts inside this panel, following their described appearance, border treatment and expression. They are part of the drawn page, not separate images:\n${overlayLines.join('\n')}` : '',
+            sfx.has(number) ? `Draw this sound effect in this panel: Panel ${number} SFX: ${sfx.get(number)}` : '',
+        ].filter(Boolean).join('\n');
     }).join('\n\n');
 }
 
