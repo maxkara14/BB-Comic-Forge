@@ -18,7 +18,8 @@ export function createDraftActionsController({ runAiDraft, cancelAiDraft, isBusy
         const clear = root.querySelector('#bbcf-draft-clear');
         const undo = root.querySelector('#bbcf-draft-clear-undo');
         const status = root.querySelector('#bbcf-draft-action-status');
-        const state = { undo: null, pending: false };
+        const assemble = root.querySelector('#bbcf-ai-draft');
+        const state = { undo: null, pending: false, revision: false, assembleHtml: assemble.innerHTML };
         states.set(root, state);
         const busy = () => state.pending || isBusy();
         root.querySelector('#bbcf-draft-revise-cancel').addEventListener('click', () => { if (state.pending) cancelAiDraft(); });
@@ -33,6 +34,7 @@ export function createDraftActionsController({ runAiDraft, cancelAiDraft, isBusy
         async function run(options = {}) {
             if (busy()) return;
             state.pending = true;
+            state.revision = Boolean(options.instruction);
             updateBusy(root);
             try {
                 const applied = await runAiDraft(root, options);
@@ -42,7 +44,10 @@ export function createDraftActionsController({ runAiDraft, cancelAiDraft, isBusy
                 }
             } finally { state.pending = false; updateBusy(root); }
         }
-        root.querySelector('#bbcf-ai-draft').addEventListener('click', () => run());
+        assemble.addEventListener('click', () => {
+            if (state.pending && !state.revision) { cancelAiDraft(); return; }
+            return run();
+        });
         apply.addEventListener('click', () => {
             const text = instruction.value.trim();
             if (!text) { instruction.focus(); return; }
@@ -78,9 +83,15 @@ export function createDraftActionsController({ runAiDraft, cancelAiDraft, isBusy
         const state = states.get(root);
         if (!state) return;
         const busy = state.pending || isBusy();
-        for (const id of ['bbcf-ai-draft', 'bbcf-draft-revise', 'bbcf-draft-revise-apply', 'bbcf-draft-revise-close', 'bbcf-draft-clear', 'bbcf-draft-clear-undo']) root.querySelector(`#${id}`).disabled = busy;
+        const assembling = state.pending && !state.revision;
+        const assemble = root.querySelector('#bbcf-ai-draft');
+        assemble.disabled = busy && !assembling;
+        assemble.innerHTML = assembling
+            ? '<i class="fa-solid fa-xmark"></i><span>Отменить</span>'
+            : state.assembleHtml;
+        for (const id of ['bbcf-draft-revise', 'bbcf-draft-revise-apply', 'bbcf-draft-revise-close', 'bbcf-draft-clear', 'bbcf-draft-clear-undo']) root.querySelector(`#${id}`).disabled = busy;
         root.querySelector('#bbcf-draft-revision-text').readOnly = busy;
-        root.querySelector('#bbcf-draft-revise-cancel').hidden = !state.pending;
+        root.querySelector('#bbcf-draft-revise-cancel').hidden = !state.pending || !state.revision;
     }
     function reset(root) {
         const state = states.get(root);

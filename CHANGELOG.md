@@ -4,6 +4,12 @@
 
 ## Русский
 
+### Отмена сборки и защита черновика — 2026-10-11 (без изменения версии)
+
+- Во время сборки «Черновик из чата» меняется на «Отменить». Отмена сохраняет прежний черновик и блокирует позднее применение ответа; после неё можно сразу запустить новый запрос.
+- «Черновик из чата» теперь проверяет полноту ответа до изменения полей. Оборванные ответы и JSON без панелей, реплик, вставок или SFX не смешиваются с сохранённым черновиком; прежние данные сохраняются.
+- Добавлены проверки неполных ответов через все текстовые подключения, применения полного ответа с пустыми массивами, отмены кнопкой и закрытием кузницы, повторного запуска и защиты от позднего ответа.
+
 ### Референсы рисовки — 2026-10-11 (без изменения версии)
 
 - Добавлены три общих референса рисовки в общем разделе «Референсы» → «Рисовка»: загрузка, вставка, отключение, название и описание. Они хранятся отдельно от референсов персонажей и не экспортируются с пресетами.
@@ -53,6 +59,12 @@
 История начата с этого файла. Ранние изменения не реконструируются полностью; даты и ссылки на коммиты выше взяты из Git.
 
 ## English
+
+### Draft cancellation and protection — 2026-10-11 (no version change)
+
+- During assembly, Draft from chat becomes Cancel. Cancellation preserves the previous draft and rejects late replies; another request can be started immediately.
+- Draft from chat now checks response completeness before changing editor fields. Truncated responses and JSON missing panels, bubbles, inserts or SFX preserve the saved draft instead of mixing new and old fields.
+- Added coverage for partial responses across all text connections, complete responses with empty arrays, button and window-close cancellation, retry and protection from late replies.
 
 ### Rendering references — 2026-10-11 (no version change)
 

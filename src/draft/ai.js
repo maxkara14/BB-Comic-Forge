@@ -39,7 +39,8 @@ export function createAiDraftController(dependencies) {
         const original = readDraftFromModal(root);
         const scope = getSavedDraftProfileKey();
         const chat = getContext().chat;
-        const button = root.querySelector(revision ? '#bbcf-draft-revise-apply' : '#bbcf-ai-draft');
+        // The actions controller owns the assembly button so it remains available for cancellation.
+        const button = revision ? root.querySelector('#bbcf-draft-revise-apply') : null;
         const previousHtml = button?.innerHTML;
         if (button) {
             button.disabled = true;
@@ -51,8 +52,10 @@ export function createAiDraftController(dependencies) {
             const raw = await runCancellableDraftPrompt(prompt, signal);
             throwIfAborted(signal);
             const draft = extractJsonObject(raw);
-            if (revision && !isCompleteRevision(draft)) {
-                throw new Error('Модель вернула неполную корректировку. Прежний черновик сохранён.');
+            if (!isCompleteDraft(draft)) {
+                throw new Error(revision
+                    ? 'Модель вернула неполную корректировку. Прежний черновик сохранён.'
+                    : 'Модель вернула неполный черновик. Прежний черновик сохранён. Попробуйте собрать заново.');
             }
             if (!root.isConnected || scope !== getSavedDraftProfileKey() || chat !== getContext().chat) throw createCancellationError();
             if (JSON.stringify(readDraftFromModal(root)) !== JSON.stringify(original)) throw new Error('Черновик изменён во время запроса. Ответ не применён; ваши правки сохранены.');
@@ -78,7 +81,7 @@ export function createAiDraftController(dependencies) {
         }
     }
 
-    function isCompleteRevision(draft) {
+    function isCompleteDraft(draft) {
         if (typeof draft.scene !== 'string' || !draft.scene.trim()) return false;
         if (Object.hasOwn(draft, 'title') && typeof draft.title !== 'string') return false;
         if (!Array.isArray(draft.panel_notes) || !draft.panel_notes.length || draft.panel_notes.length > MAX_PANELS) return false;

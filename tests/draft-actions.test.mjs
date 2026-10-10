@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { createContext, SourceTextModule } from 'node:vm';
+import { createContext, runInContext, SourceTextModule } from 'node:vm';
 
 const response = { title: 'Revised page', scene: 'Final fight', panel_notes: ['Close-up of the final fight'], bubbles: [], inserts: [], sfx: [] };
 async function harness({ reply = async () => JSON.stringify(response), mode = 'sillytavern' } = {}) {
@@ -225,4 +225,130 @@ test('Forge registers draft actions and revision controls use explicit non-submi
     assert.match(index, /signal: controller\.signal/);
     const view = readFileSync(new URL('../src/ui/forge-view.js', import.meta.url), 'utf8');
     for (const id of ['bbcf-draft-revise','bbcf-draft-clear','bbcf-draft-revise-apply','bbcf-draft-clear-undo']) assert.match(view, new RegExp(`type="button" id="${id}"`));
+});
+
+
+test('ordinary draft generation rejects partial and truncated responses without replacing saved fields', async () => {
+    for (const mode of ['sillytavern', 'openai-chat', 'gemini']) {
+        for (const raw of [JSON.stringify({ title: 'Partial', scene: 'New scene', character_lock: 'New appearance' }), '{"title":"Partial","scene":"New scene","character_lock":"Silver hair']) {
+            const h = await harness({ mode, reply: async () => raw });
+            const before = JSON.stringify(h.draftState.readDraftFromModal(h.root));
+            const saved = JSON.stringify(h.draftState.getSavedDraft());
+            const saves = h.saves;
+            assert.equal(await h.ai.fillDraftFromAi(h.root), false);
+            assert.equal(JSON.stringify(h.draftState.readDraftFromModal(h.root)), before);
+            assert.equal(JSON.stringify(h.draftState.getSavedDraft()), saved);
+            assert.equal(h.saves, saves);
+            assert.match(h.notices.at(-1).error, /неполный черновик.*Прежний черновик сохранён/);
+        }
+    }
+});
+
+test('ordinary complete draft replaces old panels and clears returned empty arrays', async () => {
+    const h = await harness();
+    assert.equal(await h.ai.fillDraftFromAi(h.root), true);
+    assert.equal(h.input('draft-title').value, response.title);
+    assert.equal(h.input('draft-notes').value, '1. ' + response.panel_notes[0]);
+    for (const field of ['draft-bubbles', 'draft-inserts', 'draft-sfx']) assert.equal(h.input(field).value, '');
+});
+
+
+test('assembly button cancels pending drafts across all connections and rejects late responses', async () => {
+    for (const mode of ['sillytavern', 'openai-chat', 'gemini']) {
+        let finish;
+        const h = await harness({ mode, reply: () => new Promise(resolve => { finish = resolve; }) });
+        const button = h.input('ai-draft'), label = button.innerHTML;
+        const saved = JSON.stringify(h.draftState.getSavedDraft());
+        const run = button.emit('click');
+        assert.match(button.innerHTML, /Отменить/);
+        assert.equal(button.disabled, false);
+        assert.equal(h.input('draft-clear').disabled, true);
+        assert.equal(h.input('draft-revise-cancel').hidden, true);
+        h.actions.updateBusy(h.root);
+        assert.equal(button.disabled, false);
+        await button.emit('click');
+        await run;
+        assert.equal(button.innerHTML, label);
+        assert.equal(button.disabled, false);
+        assert.equal(h.input('draft-clear').disabled, false);
+        finish(JSON.stringify(response));
+        await Promise.resolve();
+        assert.equal(JSON.stringify(h.draftState.getSavedDraft()), saved);
+        assert.equal(h.input('draft-scene').value, h.initial.scene);
+        assert.equal(h.notices.length, 0);
+        assert.equal(h.prompts.length, 1);
+        const retry = button.emit('click');
+        finish(JSON.stringify(response));
+        await retry;
+        assert.equal(h.input('draft-scene').value, response.scene);
+        assert.equal(button.innerHTML, label);
+    }
+});
+
+test('assembly cancellation button remains unavailable during revisions and image generation', async () => {
+    let finish;
+    const h = await harness({ reply: () => new Promise(resolve => { finish = resolve; }) });
+    const button = h.input('ai-draft'), label = button.innerHTML;
+    h.input('draft-revision-text').value = 'Focus on the end';
+    const run = h.input('draft-revise-apply').emit('click');
+    assert.equal(button.disabled, true);
+    assert.equal(button.innerHTML, label);
+    await h.input('draft-revise-cancel').emit('click');
+    await run;
+    finish(JSON.stringify(response));
+    h.setBusy(true);
+    assert.equal(button.disabled, true);
+    assert.equal(button.innerHTML, label);
+});
+
+
+test('closing Forge uses the same abort signal, preserves the draft and allows reopening', async () => {
+    for (const confirmClose of [false, true]) {
+        let finish, calls = 0;
+        const h = await harness({ reply: () => ++calls === 1 ? new Promise(resolve => { finish = resolve; }) : JSON.stringify(response) });
+        const chat = [], state = { modal: h.root, generating: false, generationRunId: 0 };
+        h.root.remove = () => { h.root.isConnected = false; };
+        let confirmations = 0;
+        const context = createContext({
+            state, AbortController,
+            window: { confirm: () => { confirmations++; return confirmClose; } },
+            toastr: { warning() {} },
+            createCancellationError: () => Object.assign(new Error('cancelled'), { name: 'AbortError' }),
+            saveDraftFromModal: h.draftState.saveDraftFromModal,
+            getSavedDraftProfileKey: () => 'chat-a', SillyTavern: { getContext: () => ({ chat }) },
+            fillDraftFromAi: h.ai.fillDraftFromAi,
+            updateFloatingButton() {}, updateSendToChatButton() {}, refreshModalForCurrentContext() {},
+        });
+        const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+        const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+        runInContext(section('function closeForgeModal()', 'function minimizeForgeModal()')
+            + section('function startGenerationSession()', 'function throwIfGenerationStale(')
+            + section('async function handleAiDraftFromModal(', 'async function handleGenerateFromModal('), context);
+        const saved = JSON.stringify(h.draftState.getSavedDraft());
+        const run = context.handleAiDraftFromModal(h.root);
+        const signal = state.generationAbortController.signal;
+        context.closeForgeModal();
+        assert.equal(confirmations, 1);
+        assert.equal(signal.aborted, confirmClose);
+        if (confirmClose) {
+            await run;
+            assert.equal(state.modal, null);
+            assert.equal(state.generating, false);
+            assert.equal(state.generationAbortController, null);
+            assert.equal(JSON.stringify(h.draftState.getSavedDraft()), saved);
+            h.root.isConnected = true; state.modal = h.root;
+            await context.handleAiDraftFromModal(h.root);
+            assert.equal(h.input('draft-scene').value, response.scene);
+            finish(JSON.stringify({ ...response, scene: 'Late cancelled scene' }));
+            await Promise.resolve();
+            assert.equal(h.input('draft-scene').value, response.scene);
+        } else {
+            assert.equal(state.modal, h.root);
+            assert.equal(h.root.isConnected, true);
+            assert.equal(state.generating, true);
+            finish(JSON.stringify(response)); await run;
+            assert.equal(h.input('draft-scene').value, response.scene);
+        }
+        assert.equal(h.notices.filter(notice => notice.error).length, 0);
+    }
 });

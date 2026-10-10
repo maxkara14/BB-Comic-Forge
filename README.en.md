@@ -130,7 +130,7 @@ The browser console records the endpoint used and the number of attached files, 
 
 ### AI drafting
 
-**Draft from chat** makes a fresh text request every time. To focus on another moment, use **Revise draft** (`Скорректировать черновик`), enter a request such as “Use the fight at the end; skip the conversation,” and **Apply changes** (`Применить правки`). The model receives the current draft and chat context; image generation remains separate. Errors, incomplete replies or cancellation preserve the draft and revision request. **Cancel request** stops waiting for the revision; late replies are ignored.
+**Draft from chat** makes a fresh text request every time. During assembly, the same button becomes **Cancel** (`Отменить`); cancellation preserves the previous draft and ignores late replies. To focus on another moment, use **Revise draft** (`Скорректировать черновик`), enter a request such as “Use the fight at the end; skip the conversation,” and **Apply changes** (`Применить правки`). The model receives the current draft and chat context; image generation remains separate. Errors, incomplete replies or cancellation preserve the draft and revision request. **Cancel request** stops waiting for the revision; late replies are ignored.
 
 **Clear** removes the scene, character descriptions, panel plan, dialogue, inserts and SFX while retaining the title, page settings and references. **Restore draft** (`Вернуть черновик`) undoes the last clear until you edit cleared fields, successfully assemble another draft, close the window or switch chats. Clearing alone does not guarantee a different scene selection.
 
